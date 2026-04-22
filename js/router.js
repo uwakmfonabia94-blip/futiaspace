@@ -128,42 +128,43 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // 5. Subscribe to Supabase auth state changes
-  supabase.auth.onAuthStateChange(async (event, session) => {
-    _session = session;
+ supabase.auth.onAuthStateChange(async (event, session) => {
+  _session = session;
 
-    if (event === 'PASSWORD_RECOVERY') {
-      _isRecoveryMode = true;
-      _showAuthPage('reset-password');
-      return;
-    }
+  if (event === 'PASSWORD_RECOVERY') {
+    _isRecoveryMode = true;
+    _showAuthPage('reset-password');
+    return;
+  }
 
-    if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-      if (session) {
-        await _loadCurrentProfile();
-        _populateDrawerUser();
-        updateLastSeen();
-        initOneSignal();
-        // Refresh unread badge
-        const count = await getUnreadCount();
-        updateNotifBadge(count);
-        // If currently on an auth page, redirect to home
-        const onAuthPage = !_currentRoute || !ROUTES[_currentRoute]?.auth;
-        if (onAuthPage && !_isRecoveryMode) navigate('#/home');
-      }
+  if (event === 'SIGNED_IN') {
+    // ✅ Use the session already passed in — NO getSession() call here
+    if (session) {
+      await _loadCurrentProfile();
+      _populateDrawerUser();
+      updateLastSeen();
+      initOneSignal();
+      const count = await getUnreadCount();
+      updateNotifBadge(count);
+      const onAuthPage = !_currentRoute || !ROUTES[_currentRoute]?.auth;
+      if (onAuthPage && !_isRecoveryMode) navigate('#/home');
     }
+  }
 
-    if (event === 'SIGNED_OUT') {
-      _session        = null;
-      _currentProfile = null;
-      navigate('#/landing');
-    }
+  // ✅ Remove INITIAL_SESSION from this block entirely —
+  // let _handleRouteChange handle the first load via its own getSession()
 
-    if (event === 'USER_UPDATED') {
-      // Password was successfully updated
-      showToast('Password updated successfully', 'success');
-      navigate('#/home');
-    }
-  });
+  if (event === 'SIGNED_OUT') {
+    _session        = null;
+    _currentProfile = null;
+    navigate('#/landing');
+  }
+
+  if (event === 'USER_UPDATED') {
+    showToast('Password updated successfully', 'success');
+    navigate('#/home');
+  }
+});
 
   // 6. Register hash-change listener for all future navigation
   window.addEventListener('hashchange', _handleRouteChange);
@@ -188,37 +189,31 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ════════════════════════════════════════════════════════════════
 // ROUTE HANDLER  — called on every hashchange and on first load
 // ════════════════════════════════════════════════════════════════
+
 async function _handleRouteChange() {
   const { routeKey, params } = _parseHash(window.location.hash);
   _currentParams = params;
 
+  // ✅ ONE call only — reused for all checks below
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session) _session = session;
+
   const route = ROUTES[routeKey];
 
-  // Unknown route → fallback
   if (!route) {
-    const { data: { session } } = await supabase.auth.getSession();
     navigate(session ? '#/home' : '#/landing');
     return;
   }
 
-  // Auth guard — protected route but no session
   if (route.auth) {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      navigate('#/login');
-      return;
-    }
-    _session = session;
-    // Ensure profile is loaded (may not be if page was hard-refreshed)
+    if (!session) { navigate('#/login'); return; }
     if (!_currentProfile) {
       await _loadCurrentProfile();
       _populateDrawerUser();
     }
   }
 
-  // Redirect logged-in user away from auth-only pages
   if (!route.auth && routeKey !== 'reset-password') {
-    const { data: { session } } = await supabase.auth.getSession();
     if (session && routeKey !== 'landing') {
       navigate('#/home');
       return;
@@ -228,7 +223,6 @@ async function _handleRouteChange() {
   _currentRoute = routeKey;
   _showPage(routeKey, params);
 }
-
 
 // ════════════════════════════════════════════════════════════════
 // SHOW PAGE

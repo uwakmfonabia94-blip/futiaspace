@@ -30,7 +30,7 @@ import { getCurrentProfile } from './router.js';
 
 
 // ── Replace with your real OneSignal App ID ────────────────────
-const ONESIGNAL_APP_ID = 'YOUR_ONESIGNAL_APP_ID';
+const ONESIGNAL_APP_ID = '3c72c354-3caf-4967-8e5c-8e67b7698603';
 // ──────────────────────────────────────────────────────────────
 
 const PROMPT_SKIPPED_KEY  = 'futia_push_skipped';

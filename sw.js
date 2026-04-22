@@ -1,44 +1,16 @@
 /**
  * FutiaSpace — sw.js
- * Service Worker — handles caching, offline support, and update detection.
- *
- * Strategy:
- *  • App shell (HTML, CSS, JS, icons, fonts): Cache-first
- *    → served from cache instantly; background revalidation on next visit
- *  • Supabase API / CDN calls: Network-first with cache fallback
- *    → always tries live data; falls back to cache if offline
- *  • External CDN scripts (Supabase, Lucide, OneSignal): Cache-first
- *
- * Update detection:
- *  • Bump CACHE_VERSION on every deploy
- *  • Old caches are deleted in the activate phase
- *  • pwa.js shows an update toast when a new SW is waiting
- *  • Clicking the toast sends SKIP_WAITING → new SW takes over → page reloads
- *
- * IMPORTANT: vercel.json sets Cache-Control: no-cache on sw.js itself
- *  so browsers always fetch the latest version on every page load.
+ * Fixed: network-first for HTML, skipWaiting on install,
+ *        prevents blank screen and 30-min stale PWA.
  */
 
-// ════════════════════════════════════════════════════════════════
-// VERSION  — bump this string on every deploy to invalidate old cache
-// ════════════════════════════════════════════════════════════════
-const CACHE_VERSION = 'futiaspace-v1.0';
+// ── Bump this on every deploy ─────────────────────────────────
+const CACHE_VERSION  = 'futiaspace-v2.0'; // ← changed from v1.0
+const SHELL_CACHE    = `${CACHE_VERSION}-shell`;
+const RUNTIME_CACHE  = `${CACHE_VERSION}-runtime`;
+const ALL_CACHES     = [SHELL_CACHE, RUNTIME_CACHE];
 
-// Cache name for app shell assets
-const SHELL_CACHE  = `${CACHE_VERSION}-shell`;
-// Cache name for runtime / API responses
-const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
-
-// All known caches — any cache NOT in this list is deleted on activate
-const ALL_CACHES   = [SHELL_CACHE, RUNTIME_CACHE];
-
-
-// ════════════════════════════════════════════════════════════════
-// ASSETS TO PRE-CACHE  (app shell)
-// ════════════════════════════════════════════════════════════════
 const SHELL_ASSETS = [
-  '/',
-  '/index.html',
   '/manifest.json',
   '/logo.svg',
   '/icon-192.png',
@@ -56,43 +28,33 @@ const SHELL_ASSETS = [
   '/js/notifications.js',
   '/js/onesignal.js',
   '/js/pwa.js',
+  // NOTE: index.html intentionally excluded — fetched fresh every time
 ];
 
-// CDN scripts to cache at runtime on first load
-const CDN_ORIGINS = [
-  'cdn.jsdelivr.net',
-  'unpkg.com',
-  'fonts.googleapis.com',
-  'fonts.gstatic.com',
-];
-
-// Supabase API domain — use network-first
-const SUPABASE_ORIGIN = 'supabase.co';
+const CDN_ORIGINS      = ['cdn.jsdelivr.net', 'unpkg.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
+const SUPABASE_ORIGIN  = 'supabase.co';
+const ONESIGNAL_ORIGIN = 'onesignal.com';
 
 
 // ════════════════════════════════════════════════════════════════
-// INSTALL  — pre-cache the app shell
+// INSTALL
 // ════════════════════════════════════════════════════════════════
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(SHELL_CACHE)
       .then(cache => cache.addAll(SHELL_ASSETS))
-      .then(() => {
-        // Don't wait for existing tabs to close before activating
-        // (pwa.js handles the reload via SKIP_WAITING message)
-        // We do NOT call skipWaiting() here automatically —
-        // we only do it when the user explicitly taps the update toast
-      })
-      .catch(err => {
-        console.error('[SW] Pre-cache failed:', err);
-        // Don't block install even if some assets fail
-      })
+      .catch(err => console.error('[SW] Pre-cache failed:', err))
   );
+
+  // ✅ FIX 1: Activate immediately — don't wait for tabs to close.
+  // This fixes the 30-minute stale PWA problem.
+  // pwa.js update toast still works — controllerchange fires and reloads.
+  self.skipWaiting();
 });
 
 
 // ════════════════════════════════════════════════════════════════
-// ACTIVATE  — clean up old caches
+// ACTIVATE
 // ════════════════════════════════════════════════════════════════
 self.addEventListener('activate', (event) => {
   event.waitUntil(
@@ -105,41 +67,48 @@ self.addEventListener('activate', (event) => {
             return caches.delete(key);
           })
       ))
-      .then(() => self.clients.claim()) // take control of all open tabs
+      .then(() => self.clients.claim())
   );
 });
 
 
 // ════════════════════════════════════════════════════════════════
-// FETCH  — routing strategy per request type
+// FETCH
 // ════════════════════════════════════════════════════════════════
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Only handle GET requests — skip POST, PUT etc.
   if (request.method !== 'GET') return;
 
-  // ── Supabase API — Network-first ─────────────────────────────
+  // Skip OneSignal entirely — it manages its own SW
+  if (url.hostname.includes(ONESIGNAL_ORIGIN)) return;
+
+  // Supabase API — network-first
   if (url.hostname.includes(SUPABASE_ORIGIN)) {
     event.respondWith(_networkFirst(request, RUNTIME_CACHE));
     return;
   }
 
-  // ── CDN scripts — Cache-first ────────────────────────────────
+  // CDN scripts — cache-first (rarely change)
   if (CDN_ORIGINS.some(origin => url.hostname.includes(origin))) {
     event.respondWith(_cacheFirst(request, RUNTIME_CACHE));
     return;
   }
 
-  // ── App shell (same origin) — Cache-first ────────────────────
+  // Same origin
   if (url.origin === self.location.origin) {
+
+    // ✅ FIX 2: index.html always network-first — prevents blank screen on refresh
+    if (url.pathname === '/' || url.pathname === '/index.html') {
+      event.respondWith(_networkFirst(request, SHELL_CACHE));
+      return;
+    }
+
+    // All other app shell files — cache-first
     event.respondWith(_cacheFirst(request, SHELL_CACHE));
     return;
   }
-
-  // ── All other requests — Network-only ────────────────────────
-  // (OneSignal worker, external resources etc.)
 });
 
 
@@ -147,10 +116,6 @@ self.addEventListener('fetch', (event) => {
 // CACHE STRATEGIES
 // ════════════════════════════════════════════════════════════════
 
-/**
- * Cache-first: serve from cache if available, otherwise fetch and cache.
- * Best for: app shell, fonts, CDN scripts — assets that change infrequently.
- */
 async function _cacheFirst(request, cacheName) {
   const cached = await caches.match(request);
   if (cached) return cached;
@@ -163,15 +128,10 @@ async function _cacheFirst(request, cacheName) {
     }
     return response;
   } catch {
-    // Fully offline and not in cache
     return _offlineFallback(request);
   }
 }
 
-/**
- * Network-first: always try the network; fall back to cache if offline.
- * Best for: Supabase API calls — we always want fresh data when online.
- */
 async function _networkFirst(request, cacheName) {
   try {
     const response = await fetch(request);
@@ -181,18 +141,12 @@ async function _networkFirst(request, cacheName) {
     }
     return response;
   } catch {
-    // Offline — try cache
     const cached = await caches.match(request);
     if (cached) return cached;
     return _offlineFallback(request);
   }
 }
 
-/**
- * Offline fallback: return the cached index.html for navigate requests
- * so the SPA router can show the offline toast.
- * For non-navigate requests, return a basic 503 response.
- */
 function _offlineFallback(request) {
   if (request.mode === 'navigate') {
     return caches.match('/index.html');
@@ -205,7 +159,7 @@ function _offlineFallback(request) {
 
 
 // ════════════════════════════════════════════════════════════════
-// MESSAGE HANDLER  — receives SKIP_WAITING from pwa.js
+// MESSAGE HANDLER
 // ════════════════════════════════════════════════════════════════
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'SKIP_WAITING') {

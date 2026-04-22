@@ -1,0 +1,455 @@
+/* ============================================================
+   FutiaSpace — base.css
+   Tokens · Reset · Typography · Utilities · Scrollbar
+   All theme values live here as CSS variables.
+   Import order: base.css → components.css → pages.css
+   ============================================================ */
+
+/* ── Google Fonts ────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap');
+
+
+/* ============================================================
+   1.  DESIGN TOKENS  — Dark Theme (default)
+   ============================================================ */
+:root,
+[data-theme="dark"] {
+  /* ── Backgrounds ─────────────────────────── */
+  --bg-base      : #0D0D0D;   /* page background  */
+  --bg-surface   : #161616;   /* cards, inputs    */
+  --bg-elevated  : #1E1E1E;   /* modals, drawer   */
+  --bg-overlay   : rgba(0,0,0,.72);
+
+  /* ── Borders ─────────────────────────────── */
+  --border       : #2A2A2A;
+  --border-focus : #6C63FF;
+  --border-input : #333333;
+
+  /* ── Brand / Accent ──────────────────────── */
+  --accent       : #6C63FF;
+  --accent-hover : #7B73FF;
+  --accent-press : #5A52E0;
+  --accent-subtle: rgba(108,99,255,.12);
+  --accent-glow  : rgba(108,99,255,.25);
+
+  /* ── Text ────────────────────────────────── */
+  --text-primary : #F0F0F0;
+  --text-secondary:#8A8A8A;
+  --text-tertiary : #555555;
+  --text-on-accent: #FFFFFF;
+  --text-danger  : #FF6B6B;
+  --text-success : #4ADE80;
+  --text-warning : #FBBF24;
+
+  /* ── Semantic ────────────────────────────── */
+  --danger       : #FF6B6B;
+  --danger-subtle: rgba(255,107,107,.12);
+  --success      : #4ADE80;
+  --success-subtle:rgba(74,222,128,.12);
+  --warning      : #FBBF24;
+
+  /* ── Skeleton shimmer ────────────────────── */
+  --skeleton-base : #1E1E1E;
+  --skeleton-shine: #2A2A2A;
+
+  /* ── Nav ─────────────────────────────────── */
+  --nav-bg       : rgba(13,13,13,.94);
+  --nav-border   : #1F1F1F;
+  --nav-icon     : #555555;
+  --nav-active   : #6C63FF;
+
+  /* ── Shadow ──────────────────────────────── */
+  --shadow-sm    : 0 1px 3px rgba(0,0,0,.4);
+  --shadow-md    : 0 4px 16px rgba(0,0,0,.5);
+  --shadow-lg    : 0 8px 32px rgba(0,0,0,.65);
+  --shadow-glow  : 0 0 20px rgba(108,99,255,.3);
+
+  /* ── Radius ──────────────────────────────── */
+  --radius-sm    : 8px;
+  --radius-md    : 12px;
+  --radius-lg    : 16px;
+  --radius-xl    : 20px;
+  --radius-full  : 9999px;
+
+  /* ── Spacing scale ───────────────────────── */
+  --space-1  :  4px;
+  --space-2  :  8px;
+  --space-3  : 12px;
+  --space-4  : 16px;
+  --space-5  : 20px;
+  --space-6  : 24px;
+  --space-8  : 32px;
+  --space-10 : 40px;
+  --space-12 : 48px;
+
+  /* ── Typography ──────────────────────────── */
+  --font-display : 'Syne',   sans-serif;
+  --font-body    : 'DM Sans', sans-serif;
+  --font-size-xs : 0.72rem;   /* 11.5px  */
+  --font-size-sm : 0.8125rem; /* 13px    */
+  --font-size-base:0.9375rem; /* 15px    */
+  --font-size-md : 1rem;      /* 16px    */
+  --font-size-lg : 1.125rem;  /* 18px    */
+  --font-size-xl : 1.375rem;  /* 22px    */
+  --font-size-2xl: 1.75rem;   /* 28px    */
+  --font-size-3xl: 2.25rem;   /* 36px    */
+  --lh-tight : 1.2;
+  --lh-snug  : 1.35;
+  --lh-base  : 1.55;
+  --lh-loose : 1.7;
+
+  /* ── Transitions ─────────────────────────── */
+  --ease-out     : cubic-bezier(.16,1,.3,1);
+  --ease-spring  : cubic-bezier(.34,1.56,.64,1);
+  --duration-fast: 140ms;
+  --duration-base: 220ms;
+  --duration-slow: 360ms;
+
+  /* ── Layout ──────────────────────────────── */
+  --top-nav-h     : 56px;
+  --bottom-nav-h  : 60px;
+  --safe-bottom   : env(safe-area-inset-bottom, 0px);
+  --safe-top      : env(safe-area-inset-top, 0px);
+  --page-pad      : 16px;
+  --max-content   : 480px;
+}
+
+
+/* ============================================================
+   2.  LIGHT THEME
+   ============================================================ */
+[data-theme="light"] {
+  --bg-base      : #F4F4F6;
+  --bg-surface   : #FFFFFF;
+  --bg-elevated  : #FFFFFF;
+  --bg-overlay   : rgba(0,0,0,.45);
+
+  --border       : #E4E4E7;
+  --border-focus : #6C63FF;
+  --border-input : #D4D4D8;
+
+  --accent       : #6C63FF;
+  --accent-hover : #5A52E0;
+  --accent-press : #4B44CC;
+  --accent-subtle: rgba(108,99,255,.08);
+  --accent-glow  : rgba(108,99,255,.15);
+
+  --text-primary : #111111;
+  --text-secondary:#6B6B6B;
+  --text-tertiary : #AAAAAA;
+  --text-on-accent: #FFFFFF;
+  --text-danger  : #DC2626;
+  --text-success : #16A34A;
+  --text-warning : #D97706;
+
+  --danger       : #DC2626;
+  --danger-subtle: rgba(220,38,38,.08);
+  --success      : #16A34A;
+  --success-subtle:rgba(22,163,74,.08);
+  --warning      : #D97706;
+
+  --skeleton-base : #E8E8EC;
+  --skeleton-shine: #F0F0F4;
+
+  --nav-bg       : rgba(244,244,246,.94);
+  --nav-border   : #E4E4E7;
+  --nav-icon     : #AAAAAA;
+  --nav-active   : #6C63FF;
+
+  --shadow-sm    : 0 1px 3px rgba(0,0,0,.08);
+  --shadow-md    : 0 4px 16px rgba(0,0,0,.1);
+  --shadow-lg    : 0 8px 32px rgba(0,0,0,.14);
+  --shadow-glow  : 0 0 20px rgba(108,99,255,.2);
+}
+
+
+/* ============================================================
+   3.  RESET & BOX MODEL
+   ============================================================ */
+*,
+*::before,
+*::after {
+  box-sizing     : border-box;
+  margin         : 0;
+  padding        : 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  font-size      : 100%; /* 16px base */
+  scroll-behavior: smooth;
+  height         : 100%;
+  /* Prevent font size inflation on iOS */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  font-family    : var(--font-body);
+  font-size      : var(--font-size-base);
+  line-height    : var(--lh-base);
+  color          : var(--text-primary);
+  background     : var(--bg-base);
+  min-height     : 100%;
+  min-height     : 100dvh;
+  overflow-x     : hidden;
+  /* Smooth theme transitions */
+  transition     : background-color var(--duration-base) var(--ease-out),
+                   color            var(--duration-base) var(--ease-out);
+}
+
+/* Prevent scroll when modal / drawer open */
+body.no-scroll {
+  overflow: hidden;
+  position: fixed;
+  width   : 100%;
+}
+
+img,
+picture,
+video,
+canvas,
+svg {
+  display   : block;
+  max-width : 100%;
+}
+
+input,
+button,
+textarea,
+select {
+  font         : inherit;
+  color        : inherit;
+  border       : none;
+  background   : none;
+  outline      : none;
+  appearance   : none;
+  -webkit-appearance: none;
+}
+
+textarea {
+  resize: vertical;
+}
+
+button {
+  cursor    : pointer;
+  user-select: none;
+}
+
+a {
+  color          : var(--accent);
+  text-decoration: none;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  line-height: var(--lh-tight);
+  color      : var(--text-primary);
+  font-weight: 700;
+}
+
+p { line-height: var(--lh-base); }
+
+ul, ol { list-style: none; }
+
+/* Remove default fieldset styles */
+fieldset {
+  border  : 0;
+  padding : 0;
+  margin  : 0;
+  min-width: 0;
+}
+
+
+/* ============================================================
+   4.  FOCUS VISIBLE  (keyboard nav accessibility)
+   ============================================================ */
+:focus { outline: none; }
+
+:focus-visible {
+  outline       : 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius : var(--radius-sm);
+}
+
+
+/* ============================================================
+   5.  CUSTOM SCROLLBAR  (webkit)
+   ============================================================ */
+::-webkit-scrollbar {
+  width : 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  {
+  background   : var(--border);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+
+
+/* ============================================================
+   6.  SELECTION COLOUR
+   ============================================================ */
+::selection {
+  background: var(--accent-subtle);
+  color     : var(--text-primary);
+}
+
+
+/* ============================================================
+   7.  UTILITY CLASSES
+   ============================================================ */
+
+/* Universal hide — used by JS to show/hide everything */
+.hidden { display: none !important; }
+
+/* Visually hidden but accessible to screen readers */
+.sr-only {
+  position : absolute;
+  width    : 1px;
+  height   : 1px;
+  padding  : 0;
+  margin   : -1px;
+  overflow : hidden;
+  clip     : rect(0,0,0,0);
+  white-space: nowrap;
+  border   : 0;
+}
+
+/* Flex utilities */
+.flex         { display: flex; }
+.flex-center  { display: flex; align-items: center; justify-content: center; }
+.flex-between { display: flex; align-items: center; justify-content: space-between; }
+.flex-col     { display: flex; flex-direction: column; }
+.gap-2        { gap: var(--space-2); }
+.gap-3        { gap: var(--space-3); }
+.gap-4        { gap: var(--space-4); }
+
+/* Text utilities */
+.text-sm      { font-size: var(--font-size-sm); }
+.text-xs      { font-size: var(--font-size-xs); }
+.text-secondary{ color: var(--text-secondary); }
+.text-accent  { color: var(--accent); }
+.text-danger  { color: var(--text-danger); }
+.text-center  { text-align: center; }
+.font-medium  { font-weight: 500; }
+.font-semibold{ font-weight: 600; }
+.truncate     { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Spacing utilities */
+.mt-2  { margin-top: var(--space-2); }
+.mt-4  { margin-top: var(--space-4); }
+.mb-4  { margin-bottom: var(--space-4); }
+
+
+/* ============================================================
+   8.  PAGE SYSTEM
+   All pages are hidden by default.
+   Router adds .page-active to show the current page.
+   ============================================================ */
+#app {
+  width     : 100%;
+  min-height: 100dvh;
+  position  : relative;
+}
+
+/* Base .page rule — hidden by default, shown via JS */
+.page {
+  display   : none;
+  width     : 100%;
+  min-height: 100dvh;
+  position  : relative;
+  animation : pageFadeIn var(--duration-base) var(--ease-out) forwards;
+}
+
+.page.page-active { display: block; }
+
+/* Page transition */
+@keyframes pageFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+
+/* ============================================================
+   9.  APP SHELL LAYOUT
+   ============================================================ */
+#app-shell {
+  display        : flex;
+  flex-direction : column;
+  min-height     : 100dvh;
+  position       : relative;
+}
+
+/* Top nav — fixed at top */
+#top-nav {
+  position       : fixed;
+  top            : 0;
+  left           : 0;
+  right          : 0;
+  z-index        : 100;
+  height         : var(--top-nav-h);
+  padding-top    : var(--safe-top);
+}
+
+/* Main scrollable content area */
+#main-content {
+  flex       : 1;
+  overflow-y : auto;
+  overflow-x : hidden;
+  /* Push down below top nav and up above bottom nav */
+  padding-top: calc(var(--top-nav-h) + var(--safe-top));
+  padding-bottom: calc(var(--bottom-nav-h) + var(--safe-bottom) + var(--space-4));
+}
+
+/* Bottom nav — fixed at bottom */
+#bottom-nav {
+  position      : fixed;
+  bottom        : 0;
+  left          : 0;
+  right         : 0;
+  z-index       : 100;
+  padding-bottom: var(--safe-bottom);
+}
+
+/* Pages inside app shell fill properly */
+#app-shell .page {
+  min-height: auto;
+  animation : none; /* handled by app shell layout */
+}
+
+/* Give app-shell pages fade-in when they become active */
+#app-shell .page.page-active {
+  display  : block;
+  animation: pageFadeIn var(--duration-base) var(--ease-out) forwards;
+}
+
+
+/* ============================================================
+   10. TOAST CONTAINER
+   ============================================================ */
+#toast-container {
+  position  : fixed;
+  top       : calc(var(--top-nav-h) + var(--safe-top) + var(--space-3));
+  left      : 50%;
+  transform : translateX(-50%);
+  z-index   : 500;
+  display   : flex;
+  flex-direction: column;
+  align-items: center;
+  gap       : var(--space-2);
+  pointer-events: none;
+  width     : min(calc(100vw - 32px), 360px);
+}
+
+
+/* ============================================================
+   11. Z-INDEX SCALE
+   ============================================================ */
+/* 100 — top/bottom navs
+   200 — drawer backdrop
+   300 — drawer
+   400 — push/install prompts
+   500 — toast container
+   600 — modal overlay         */

@@ -1,5 +1,4 @@
 // js/app.js
-import './ui/imageViewer.js';
 import { supabase } from './supabase.js';
 import { route, navigate, resolve } from './router.js';
 import { renderShell, updateShellUser } from './ui/shell.js';
@@ -8,10 +7,11 @@ import { renderLogin } from './pages/login.js';
 import { renderSignup } from './pages/signup.js';
 import { renderDirectory } from './pages/directory.js';
 import { renderProfile } from './pages/profile.js';
-import { renderFeed } from './pages/feed.js';
 import { renderNotifications, updateBadge } from './pages/notifications.js';
 import { renderSettings } from './pages/settings.js';
 import { renderPrivacy, renderAbout, renderGuidelines } from './pages/static.js';
+import { renderMarketplace } from './pages/marketplace.js';   // real marketplace page
+import './ui/imageViewer.js';                                 // full‑screen image viewer
 
 // Auth guard helper
 async function requireGuest(fallback = '/directory') {
@@ -25,9 +25,13 @@ route('/landing', async () => { if (!(await requireGuest('/directory'))) return;
 route('/login', async () => { if (!(await requireGuest('/directory'))) return; renderLogin(); });
 route('/signup', async () => { if (!(await requireGuest('/directory'))) return; renderSignup(); });
 route('/directory', renderDirectory);
-route('/feed', renderFeed);
+route('/marketplace', renderMarketplace);          // ← real marketplace
 route('/notifications', renderNotifications);
-route('/profile', () => { supabase.auth.getSession().then(({ data: { session } }) => { if (session) navigate(`/profile/${session.user.id}`); }); });
+route('/profile', () => {
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    if (session) navigate(`/profile/${session.user.id}`);
+  });
+});
 route('/profile/:id', (params) => renderProfile(params.id));
 route('/settings', renderSettings);
 route('/privacy', renderPrivacy);
@@ -48,13 +52,12 @@ supabase.auth.onAuthStateChange((event, session) => {
   }
 });
 
-// ── PWA install prompt (captured once) ──
+// PWA install prompt
 let deferredPrompt;
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredPrompt = e;
-  window.__deferredPrompt = e;   // exposed for shell.js
-  // Optionally show a small banner
+  window.__deferredPrompt = e;
   showInstallBanner();
 });
 
@@ -76,7 +79,6 @@ function showInstallBanner() {
     if (deferredPrompt) {
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
-      console.log('Install outcome:', outcome);
       deferredPrompt = null;
     }
     banner.remove();

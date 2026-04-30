@@ -2,7 +2,7 @@
 import { updateBadge } from '../pages/notifications.js';
 import { navigate } from '../router.js';
 import { supabase } from '../supabase.js';
-import { showToast } from '../ui/toast.js';   // for install feedback
+import { showToast } from '../ui/toast.js';
 
 let currentUser = null;
 
@@ -32,8 +32,8 @@ export function renderShell() {
       <a href="#/directory" class="nav-item" data-route="/directory">
         <i data-lucide="users"></i><span>Directory</span>
       </a>
-      <a href="#/feed" class="nav-item" data-route="/feed">
-        <i data-lucide="message-square"></i><span>Feed</span>
+      <a href="#/marketplace" class="nav-item" data-route="/marketplace">
+        <i data-lucide="shopping-bag"></i><span>Marketplace</span>
       </a>
       <a href="#/notifications" class="nav-item" data-route="/notifications">
         <i data-lucide="bell"></i><span>Notifications</span>
@@ -69,7 +69,7 @@ export function renderShell() {
 
   lucide.createIcons();
 
-  // Drawer
+  // Drawer logic (unchanged)
   const hamburgerBtn = document.getElementById('hamburgerBtn');
   const drawer = document.getElementById('drawer');
   const overlay = document.getElementById('drawerOverlay');
@@ -90,17 +90,14 @@ export function renderShell() {
     });
   });
 
-  // Manual Install button handler
+  // Manual Install button handler (unchanged)
   document.getElementById('installAppBtn').addEventListener('click', async () => {
-    // Already installed?
     if (window.matchMedia('(display-mode: standalone)').matches) {
       showToast('App is already installed!', 'info');
       drawer.classList.remove('open');
       overlay.classList.remove('open');
       return;
     }
-
-    // Use the captured beforeinstallprompt if available
     if (window.__deferredPrompt) {
       await window.__deferredPrompt.prompt();
       const { outcome } = await window.__deferredPrompt.userChoice;
@@ -109,7 +106,6 @@ export function renderShell() {
       }
       window.__deferredPrompt = null;
     } else {
-      // Fallback manual instructions
       showToast('Tap the share icon and select "Add to Home Screen"', 'info');
     }
     drawer.classList.remove('open');
@@ -122,7 +118,7 @@ export function renderShell() {
     overlay.classList.remove('open');
   });
 
-  // Active nav
+  // Active nav (unchanged)
   const setActiveNav = () => {
     const hash = window.location.hash.slice(1) || '/directory';
     document.querySelectorAll('.nav-item').forEach(el => {
@@ -152,7 +148,6 @@ export function updateShellUser(user) {
     bottomNav.style.display = 'flex';
     mainContent.style.paddingBottom = 'calc(var(--nav-height) + 16px)';
 
-    // Fetch the actual avatar from the profiles table
     (async () => {
       const { data: profile, error } = await supabase
         .from('profiles')
@@ -164,7 +159,6 @@ export function updateShellUser(user) {
         avatar.src = profile.avatar_url;
         avatar.style.display = 'block';
       } else {
-        // No avatar – hide the element completely
         avatar.style.display = 'none';
         avatar.removeAttribute('src');
       }

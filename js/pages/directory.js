@@ -33,18 +33,26 @@ export async function renderDirectory() {
         </div>
       </div>
 
+      <!-- Suggestions & product spotlight -->
       <div id="suggestedSection"></div>
 
-      <div id="profileListContainer">
-        ${skeletonCards(5)}
+      <!-- Product spotlight (horizontal scroll) -->
+      <div id="productSpotlight"></div>
+
+      <!-- Main profile grid -->
+      <div id="profileGridContainer">
+        ${skeletonGrid(6)}
       </div>
     </div>
   `;
 
   loadDepartmentFilter();
 
-  // Both sections load at once – no second flash
-  await Promise.all([loadSuggestedSection(), loadProfiles()]);
+  await Promise.all([
+    loadSuggestedSection(),
+    loadProductSpotlight(),
+    loadProfiles()
+  ]);
 
   const searchInput = document.getElementById('searchInput');
   if (searchInput) searchInput.addEventListener('input', debounce(applyFilters, 300));
@@ -53,11 +61,11 @@ export async function renderDirectory() {
   const levelFilter = document.getElementById('filterLevel');
   if (levelFilter) levelFilter.addEventListener('change', applyFilters);
 
-  // Delay real-time subscription to avoid duplicate load on first render
   setTimeout(() => subscribeToFriendshipChanges(), 1000);
 }
 
-function skeletonCards(count) {
+// ── Skeleton grid ──
+function skeletonGrid(count) {
   return Array(count).fill(`
     <div class="profile-card skeleton">
       <div class="skeleton-avatar"></div>
@@ -69,6 +77,7 @@ function skeletonCards(count) {
   `).join('');
 }
 
+// ── Filters ──
 async function loadDepartmentFilter() {
   const deptSelect = document.getElementById('filterDepartment');
   if (!deptSelect) return;
@@ -93,10 +102,51 @@ function applyFilters() {
   loadProfiles();
 }
 
-async function loadProfiles() {
-  const container = document.getElementById('profileListContainer');
+// ── Product spotlight (horizontal scroll) ──
+async function loadProductSpotlight() {
+  const container = document.getElementById('productSpotlight');
   if (!container) return;
-  container.innerHTML = skeletonCards(5);
+
+  const { data: products, error } = await supabase
+    .from('marketplace_items')
+    .select('id, user_id, title, price, image_url1, image_url2, profiles!inner(id, full_name, avatar_url)')
+    .eq('status', 'available')
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  if (error || !products || products.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="suggestion-box">
+      <h4>Products for sale</h4>
+      <div class="horizontal-scroll">
+        ${products.map(p => {
+          const productImage = p.image_url1 || p.image_url2;
+          const imgHtml = productImage
+            ? `<img src="${escapeHtml(productImage)}" class="suggestion-product-img" onclick="event.stopPropagation(); window.openImageViewer('${escapeHtml(productImage)}')" />`
+            : '<div class="avatar-placeholder" style="width:48px;height:48px;background:var(--color-surface-hover);">🛒</div>';
+          return `
+            <div class="suggestion-card" onclick="window.location.hash='#/marketplace'">
+              ${imgHtml}
+              <span class="name">${escapeHtml(p.title.substring(0, 20))}</span>
+              <span class="dept">${p.price ? escapeHtml(p.price) : 'Contact'}</span>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+  lucide.createIcons({ target: container });
+}
+
+// ── Profile grid ──
+async function loadProfiles() {
+  const container = document.getElementById('profileGridContainer');
+  if (!container) return;
+  container.innerHTML = skeletonGrid(6);
 
   let query = supabase
     .from('profiles')
@@ -136,6 +186,7 @@ async function loadProfiles() {
   attachCardEvents();
 }
 
+// ── Simplified profile card (only photo, name, dept, level, gender, friend button) ──
 function renderProfileCard(profile) {
   const avatarHtml = getAvatarHtml(profile);
   const friendBtn = getFriendButtonHtml(profile.friendship, profile.id);
@@ -146,18 +197,8 @@ function renderProfileCard(profile) {
       </div>
       <div class="card-info">
         <h3>${escapeHtml(profile.full_name)}</h3>
-        <div class="card-details-row">
-          <span class="card-detail"><i data-lucide="building-2" style="width:14px;height:14px;"></i> ${escapeHtml(profile.department)}</span>
-          <span class="card-detail"><i data-lucide="graduation-cap" style="width:14px;height:14px;"></i> ${profile.level}L</span>
-        </div>
-        <div class="card-details-row">
-          <span class="card-detail"><i data-lucide="user" style="width:14px;height:14px;"></i> ${profile.gender}</span>
-        </div>
-        <p class="card-bio">${profile.bio ? escapeHtml(profile.bio.substring(0, 80) + (profile.bio.length > 80 ? '…' : '')) : ''}</p>
-        <div class="social-proof card-mutual">
-          ${profile.mutualCount > 0 ? `<span><i data-lucide="users" style="width:14px;height:14px;"></i> ${profile.mutualCount} mutual</span>` : ''}
-          <span>${profile.poke_count} interactions</span>
-        </div>
+        <p class="dept-level">${escapeHtml(profile.department)} · ${profile.level}L</p>
+        <p class="card-detail"><i data-lucide="user" style="width:14px;height:14px;"></i> ${profile.gender}</p>
       </div>
       <div class="card-action">${friendBtn}</div>
     </div>
@@ -166,11 +207,11 @@ function renderProfileCard(profile) {
 
 function getFriendButtonHtml(friendship, otherUserId) {
   if (!friendship) {
-    return `<button class="btn-friend add" data-user-id="${otherUserId}"><i data-lucide="user-plus"></i> Add Friend</button>`;
+    return `<button class="btn-friend add" data-user-id="${otherUserId}"><i data-lucide="user-plus"></i> Add</button>`;
   }
   if (friendship.status === 'pending') {
     if (friendship.sender_id === currentUserId) {
-      return `<button class="btn-friend pending" disabled><i data-lucide="user-check"></i> Request Sent`;
+      return `<button class="btn-friend pending" disabled><i data-lucide="user-check"></i> Sent</button>`;
     } else {
       return `
         <div class="friend-request-actions" data-user-id="${otherUserId}">
@@ -186,6 +227,7 @@ function getFriendButtonHtml(friendship, otherUserId) {
   return '';
 }
 
+// ── Event binding ──
 function attachCardEvents() {
   document.querySelectorAll('.btn-friend.add').forEach(btn => {
     btn.addEventListener('click', async (e) => {
@@ -218,9 +260,8 @@ async function addFriend(userId, button) {
     showToast('Could not send request: ' + error.message, 'error');
     return;
   }
-  // Inline update
   button.disabled = true;
-  button.innerHTML = `<i data-lucide="user-check"></i> Request Sent`;
+  button.innerHTML = `<i data-lucide="user-check"></i> Sent`;
   button.classList.add('pending');
   lucide.createIcons({ target: button });
   showToast('Friend request sent', 'success');
@@ -234,7 +275,6 @@ async function respondToFriendRequest(friendshipId, newStatus, button) {
     showToast('Update failed: ' + error.message, 'error');
     return;
   }
-  // Inline update
   const actionsDiv = button.closest('.friend-request-actions');
   if (actionsDiv) {
     if (newStatus === 'accepted') {
@@ -246,6 +286,7 @@ async function respondToFriendRequest(friendshipId, newStatus, button) {
   }
 }
 
+// ── Helpers ──
 async function getFriendshipStatus(userA, userB) {
   let { data } = await supabase
     .from('friendships')
@@ -268,14 +309,7 @@ async function getMutualCount(userA, userB) {
   return error ? 0 : data;
 }
 
-function formatJoinedDate(dateStr) {
-  const date = new Date(dateStr);
-  const month = date.toLocaleString('en-US', { month: 'short' });
-  const year = date.getFullYear();
-  return `${month} ${year}`;
-}
-
-// ── SUGGESTED SECTION ──
+// ── Suggested section (unchanged) ──
 async function loadSuggestedSection() {
   const container = document.getElementById('suggestedSection');
   if (!container) return;
@@ -378,6 +412,7 @@ async function loadSuggestedSection() {
   lucide.createIcons({ target: container });
 }
 
+// ── Real‑time (unchanged) ──
 function subscribeToFriendshipChanges() {
   if (realtimeChannel) supabase.removeChannel(realtimeChannel);
   realtimeChannel = supabase

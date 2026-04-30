@@ -15,7 +15,6 @@ export function openImageViewer(url) {
   const close = () => overlay.remove();
 
   overlay.addEventListener('click', (e) => {
-    // use closest to safely detect clicks on the close button or its children
     if (e.target.closest('.image-viewer-close') || e.target === overlay) {
       close();
     }
@@ -29,5 +28,5 @@ export function openImageViewer(url) {
   });
 }
 
-// expose globally for inline onclick
+// Expose globally (for inline onclick attributes)
 window.openImageViewer = openImageViewer;

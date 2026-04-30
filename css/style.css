@@ -2388,3 +2388,109 @@ body {
 html, body {
   overflow-x: hidden;
 }
+
+/* ── Fill entire phone screen, no side gaps ── */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+#app {
+  width: 100%;
+  max-width: none;            /* remove max-width on small screens */
+  margin: 0 auto;
+  box-shadow: none;           /* hide shadow that can add perceived gap */
+}
+
+/* On larger screens (desktop / tablet) bring back the phone‑like container */
+@media (min-width: 481px) {
+  #app {
+    max-width: var(--max-app-width);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03),
+                0 0 100px rgba(0, 0, 0, 0.9),
+                0 0 140px rgba(109, 40, 217, 0.07);
+  }
+}
+
+/* Make sure the bottom nav is always full width and centred */
+.bottom-nav {
+  left: 0;
+  right: 0;
+  width: 100%;
+  max-width: var(--max-app-width);
+  margin-left: auto;
+  margin-right: auto;
+  transform: none;
+}
+
+@media (max-width: 480px) {
+  .bottom-nav {
+    max-width: 100%;          /* full width on mobile */
+  }
+}
+
+/* ====== EDGE‑TO‑EDGE PHONE FIX ====== */
+/* Remove every possible body / html gap */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  overflow-x: hidden;
+  background: var(--color-bg);   /* solid fallback – no gradient gap */
+}
+
+/* Make #app always fill the screen on small devices */
+#app {
+  width: 100%;
+  max-width: 100%;          /* ← overrides the 480px for mobile */
+  margin: 0;
+  box-shadow: none;         /* shadows can create visual "gaps" */
+  border-radius: 0;         /* just to be safe */
+}
+
+/* On larger screens bring back the phone‑like look */
+@media (min-width: 481px) {
+  #app {
+    max-width: var(--max-app-width);
+    margin-left: auto;
+    margin-right: auto;
+    /* optional shadow for desktop */
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03),
+                0 0 100px rgba(0, 0, 0, 0.9),
+                0 0 140px rgba(109, 40, 217, 0.07);
+  }
+}
+
+/* Make sure bottom nav, header, and main content also stretch */
+.app-header,
+.bottom-nav,
+.main-content {
+  width: 100%;
+}
+
+/* Specific fix for bottom nav centering */
+.bottom-nav {
+  left: 0;
+  right: 0;
+  margin-left: 0;
+  margin-right: 0;
+  width: 100%;
+  max-width: 100%;
+  transform: none;
+}
+
+@media (min-width: 481px) {
+  .bottom-nav {
+    max-width: var(--max-app-width);
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+/* Remove any leftover padding on main content that could push out */
+.main-content {
+  padding-left: 0;
+  padding-right: 0;
+}

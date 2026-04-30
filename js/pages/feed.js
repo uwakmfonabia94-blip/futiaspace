@@ -29,7 +29,6 @@ export async function renderFeed() {
 
   main.innerHTML = `
     <div class="feed-page">
-      <!-- Inline compose box -->
       <div class="feed-compose">
         <textarea id="feedComposeInput" class="feed-compose-textarea" placeholder="${placeholders[0]}" maxlength="500"></textarea>
         <div class="feed-compose-actions">
@@ -37,7 +36,6 @@ export async function renderFeed() {
           <button class="btn btn-primary btn-sm" id="feedPostBtn" disabled>Post</button>
         </div>
       </div>
-
       <div id="feedPostsContainer">
         ${skeletonPosts(4)}
       </div>
@@ -45,12 +43,10 @@ export async function renderFeed() {
     </div>
   `;
 
-  // Compose textarea logic
   const textarea = document.getElementById('feedComposeInput');
   const postBtn = document.getElementById('feedPostBtn');
   const charCount = document.getElementById('feedCharCount');
 
-  // Rotating placeholder
   let placeholderIndex = 0;
   const rotate = () => {
     if (!textarea || document.activeElement === textarea) return;
@@ -90,7 +86,6 @@ export async function renderFeed() {
   subscribeRealtime();
 }
 
-// ── Skeleton ────────────────────────────────────────
 function skeletonPosts(count) {
   return Array(count).fill(`
     <div class="feed-post skeleton">
@@ -109,7 +104,6 @@ function skeletonPosts(count) {
   `).join('');
 }
 
-// ── Core loading (uses single RPC) ──────────────────
 async function loadPosts(reset = false) {
   if (isLoading) return;
   isLoading = true;
@@ -137,9 +131,7 @@ async function loadPosts(reset = false) {
     }
 
     if (!posts || posts.length === 0) {
-      if (reset) {
-        container.innerHTML = `<p class="feed-empty">✨ No posts yet – be the first to share something!</p>`;
-      }
+      if (reset) container.innerHTML = `<p class="feed-empty">✨ No posts yet – be the first to share something!</p>`;
       const lm = document.getElementById('loadMoreBtn');
       if (lm) lm.style.display = 'none';
       return;
@@ -159,10 +151,23 @@ async function loadPosts(reset = false) {
   }
 }
 
-// ── Post HTML ───────────────────────────────────────
 function renderPostHTML(post) {
   const author = post.author_json;
   const isOwnPost = post.post_user_id === getCurrentUser().id;
+  const friendship = post.friendship_status;  // null | 'pending_sent' | 'pending_received' | 'accepted'
+
+  let friendBtn = '';
+  if (!isOwnPost) {
+    if (!friendship) {
+      friendBtn = `<button class="btn-sm btn-secondary add-friend-btn" data-user-id="${author.id}"><i data-lucide="user-plus"></i> Add</button>`;
+    } else if (friendship === 'pending_sent') {
+      friendBtn = `<button class="btn-sm btn-secondary" disabled><i data-lucide="clock"></i> Pending</button>`;
+    } else if (friendship === 'pending_received') {
+      // For now just show "Requested" – you can later add accept/decline here
+      friendBtn = `<button class="btn-sm btn-secondary" disabled><i data-lucide="clock"></i> Requested</button>`;
+    }
+    // if 'accepted' – no button shown
+  }
 
   return `
     <div class="feed-post" data-post-id="${post.id}">
@@ -174,7 +179,7 @@ function renderPostHTML(post) {
           <span class="post-author-name clickable" onclick="window.location.hash='#/profile/${author.id}'">${escapeHtml(author.full_name)}</span>
           <span class="post-time">${timeAgo(post.created_at)}</span>
         </div>
-        ${!isOwnPost ? `<button class="btn-sm btn-secondary add-friend-btn" data-user-id="${author.id}"><i data-lucide="user-plus"></i> Add</button>` : ''}
+        ${friendBtn}
         ${isOwnPost ? `
           <div class="post-menu-wrapper">
             <button class="post-menu-btn"><i data-lucide="more-horizontal"></i></button>
@@ -204,7 +209,6 @@ function renderPostHTML(post) {
   `;
 }
 
-// ── Event binding ──────────────────────────────────
 function attachPostEvents() {
   const userId = getCurrentUser().id;
 
@@ -217,7 +221,6 @@ function attachPostEvents() {
     });
   });
 
-  // Close all dropdowns when clicking outside
   window.addEventListener('click', (e) => {
     if (!e.target.closest('.post-menu-wrapper')) {
       document.querySelectorAll('.post-dropdown').forEach(d => d.style.display = 'none');
@@ -281,7 +284,7 @@ function attachPostEvents() {
         else showToast('Could not send friend request', 'error');
         return;
       }
-      btn.innerHTML = `<i data-lucide="clock"></i> Pending`;
+      btn.innerHTML = `<i data-lucide="user-check"></i> Request sent`;
       btn.disabled = true;
       lucide.createIcons({ target: btn });
       showToast('Friend request sent', 'success');
@@ -337,7 +340,6 @@ function attachPostEvents() {
   });
 }
 
-// ── Comments loading (flat list) ────────────────────
 async function loadComments(postId) {
   const listEl = document.getElementById(`comments-list-${postId}`);
   if (!listEl) return;
@@ -376,7 +378,6 @@ async function loadComments(postId) {
   lucide.createIcons({ target: listEl });
 }
 
-// ── Real‑time subscriptions ─────────────────────────
 function subscribeRealtime() {
   if (realtimeChannel) supabase.removeChannel(realtimeChannel);
   realtimeChannel = supabase
@@ -388,7 +389,6 @@ function subscribeRealtime() {
     .subscribe();
 }
 
-// ── Report modal (custom) ──────────────────────────
 function showReportModal(postId) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -424,7 +424,6 @@ function showReportModal(postId) {
   overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
 }
 
-// ── Load more button ────────────────────────────────
 document.addEventListener('click', (e) => {
   if (e.target.id === 'loadMoreBtn') {
     page++;
@@ -432,7 +431,6 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// ── Cleanup on navigation ───────────────────────────
 window.addEventListener('hashchange', () => {
   if (!window.location.hash.startsWith('#/feed')) {
     if (realtimeChannel) supabase.removeChannel(realtimeChannel);

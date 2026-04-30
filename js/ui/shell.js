@@ -2,6 +2,7 @@
 import { updateBadge } from '../pages/notifications.js';
 import { navigate } from '../router.js';
 import { supabase } from '../supabase.js';
+import { showToast } from '../ui/toast.js';   // for install feedback
 
 let currentUser = null;
 
@@ -57,6 +58,9 @@ export function renderShell() {
       <div class="drawer-item" data-route="/guidelines">
         <i data-lucide="book-open"></i> Community Guidelines
       </div>
+      <div class="drawer-item" id="installAppBtn">
+        <i data-lucide="download"></i> Install App
+      </div>
       <div class="drawer-item" id="logoutBtn">
         <i data-lucide="log-out"></i> Log Out
       </div>
@@ -84,6 +88,32 @@ export function renderShell() {
       drawer.classList.remove('open');
       overlay.classList.remove('open');
     });
+  });
+
+  // Manual Install button handler
+  document.getElementById('installAppBtn').addEventListener('click', async () => {
+    // Already installed?
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      showToast('App is already installed!', 'info');
+      drawer.classList.remove('open');
+      overlay.classList.remove('open');
+      return;
+    }
+
+    // Use the captured beforeinstallprompt if available
+    if (window.__deferredPrompt) {
+      await window.__deferredPrompt.prompt();
+      const { outcome } = await window.__deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        showToast('Installing…', 'success');
+      }
+      window.__deferredPrompt = null;
+    } else {
+      // Fallback manual instructions
+      showToast('Tap the share icon and select "Add to Home Screen"', 'info');
+    }
+    drawer.classList.remove('open');
+    overlay.classList.remove('open');
   });
 
   document.getElementById('logoutBtn').addEventListener('click', async () => {
@@ -134,7 +164,7 @@ export function updateShellUser(user) {
         avatar.src = profile.avatar_url;
         avatar.style.display = 'block';
       } else {
-        // No avatar – hide the image completely (no broken image)
+        // No avatar – hide the element completely
         avatar.style.display = 'none';
         avatar.removeAttribute('src');
       }

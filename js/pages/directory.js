@@ -1,14 +1,13 @@
 // js/pages/directory.js
 import { showToast } from '../ui/toast.js';
 import { supabase } from '../supabase.js';
-import { getCurrentUser } from '../ui/shell.js';   // global current user
+import { getCurrentUser } from '../ui/shell.js';
 import { escapeHtml, timeAgo, getAvatarHtml } from '../lib/utils.js';
 
 let currentUserId = null;
 let filters = { department: '', level: '', search: '' };
 let realtimeChannel = null;
 
-// ────────────────────────────────────────────────────
 export async function renderDirectory() {
   const main = document.getElementById('mainContent');
   if (!main) return;
@@ -16,7 +15,6 @@ export async function renderDirectory() {
   const user = getCurrentUser();
   currentUserId = user.id;
 
-  // ── Shell ──────────────────────────────────────
   main.innerHTML = `
     <div class="directory-page">
       <div class="directory-header">
@@ -35,23 +33,19 @@ export async function renderDirectory() {
         </div>
       </div>
 
-      <!-- Recently joined & people you may know / invite CTA -->
       <div id="suggestedSection"></div>
 
-      <!-- Main profile list -->
       <div id="profileListContainer">
         ${skeletonCards(5)}
       </div>
     </div>
   `;
 
-  // Load filter dropdowns
   loadDepartmentFilter();
 
-  // Fetch suggestions + profiles
+  // Both sections load at once – no second flash
   await Promise.all([loadSuggestedSection(), loadProfiles()]);
 
-  // Attach filters (with null checks)
   const searchInput = document.getElementById('searchInput');
   if (searchInput) searchInput.addEventListener('input', debounce(applyFilters, 300));
   const deptFilter = document.getElementById('filterDepartment');
@@ -59,11 +53,10 @@ export async function renderDirectory() {
   const levelFilter = document.getElementById('filterLevel');
   if (levelFilter) levelFilter.addEventListener('change', applyFilters);
 
-  // Real‑time friendship changes
-  subscribeToFriendshipChanges();
+  // Delay real-time subscription to avoid duplicate load on first render
+  setTimeout(() => subscribeToFriendshipChanges(), 1000);
 }
 
-// ── SKELETON CARDS ──────────────────────────────────
 function skeletonCards(count) {
   return Array(count).fill(`
     <div class="profile-card skeleton">
@@ -76,7 +69,6 @@ function skeletonCards(count) {
   `).join('');
 }
 
-// ── FILTERS ─────────────────────────────────────────
 async function loadDepartmentFilter() {
   const deptSelect = document.getElementById('filterDepartment');
   if (!deptSelect) return;
@@ -101,7 +93,6 @@ function applyFilters() {
   loadProfiles();
 }
 
-// ── PROFILE LIST ────────────────────────────────────
 async function loadProfiles() {
   const container = document.getElementById('profileListContainer');
   if (!container) return;
@@ -115,10 +106,9 @@ async function loadProfiles() {
   if (filters.department) query = query.eq('department', filters.department);
   if (filters.level) query = query.eq('level', filters.level);
   if (filters.search) {
-    query = query.textSearch('full_name', filters.search); // requires GIN index (already exists)
+    query = query.textSearch('full_name', filters.search);
   }
 
-  // order by last_seen (most recent first), falling back to created_at
   const { data: profiles, error } = await query
     .order('last_seen', { ascending: false })
     .limit(50);
@@ -133,7 +123,6 @@ async function loadProfiles() {
     return;
   }
 
-  // Enrich each profile with friendship status and mutual count
   const enriched = await Promise.all(profiles.map(async p => {
     const [friendship, mutual] = await Promise.all([
       getFriendshipStatus(currentUserId, p.id),
@@ -147,7 +136,6 @@ async function loadProfiles() {
   attachCardEvents();
 }
 
-// ── PROFILE CARD HTML ───────────────────────────────
 function renderProfileCard(profile) {
   const avatarHtml = getAvatarHtml(profile);
   const friendBtn = getFriendButtonHtml(profile.friendship, profile.id);
@@ -176,14 +164,13 @@ function renderProfileCard(profile) {
   `;
 }
 
-// ── FRIEND BUTTONS ─────────────────────────────────
 function getFriendButtonHtml(friendship, otherUserId) {
   if (!friendship) {
     return `<button class="btn-friend add" data-user-id="${otherUserId}"><i data-lucide="user-plus"></i> Add Friend</button>`;
   }
   if (friendship.status === 'pending') {
     if (friendship.sender_id === currentUserId) {
-      return `<button class="btn-friend pending" disabled><i data-lucide="clock"></i> Pending</button>`;
+      return `<button class="btn-friend pending" disabled><i data-lucide="user-check"></i> Request Sent`;
     } else {
       return `
         <div class="friend-request-actions" data-user-id="${otherUserId}">
@@ -204,41 +191,61 @@ function attachCardEvents() {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const userId = btn.dataset.userId;
-      await addFriend(userId);
+      await addFriend(userId, btn);
     });
   });
   document.querySelectorAll('.btn-accept').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      await respondToFriendRequest(btn.dataset.friendshipId, 'accepted');
+      await respondToFriendRequest(btn.dataset.friendshipId, 'accepted', btn);
     });
   });
   document.querySelectorAll('.btn-decline').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      await respondToFriendRequest(btn.dataset.friendshipId, 'declined');
+      await respondToFriendRequest(btn.dataset.friendshipId, 'declined', btn);
     });
   });
 }
 
-// ── FRIENDSHIP ACTIONS ──────────────────────────────
-async function addFriend(userId) {
+async function addFriend(userId, button) {
   const { error } = await supabase.from('friendships').insert({
     sender_id: currentUserId,
     receiver_id: userId,
     status: 'pending'
   });
-  if (error) alert('Could not send request: ' + error.message);
-  else loadProfiles();
+  if (error) {
+    showToast('Could not send request: ' + error.message, 'error');
+    return;
+  }
+  // Inline update
+  button.disabled = true;
+  button.innerHTML = `<i data-lucide="user-check"></i> Request Sent`;
+  button.classList.add('pending');
+  lucide.createIcons({ target: button });
+  showToast('Friend request sent', 'success');
 }
 
-async function respondToFriendRequest(friendshipId, status) {
-  const { error } = await supabase.from('friendships').update({ status }).eq('id', friendshipId);
-  if (error) alert('Update failed: ' + error.message);
-  else loadProfiles();
+async function respondToFriendRequest(friendshipId, newStatus, button) {
+  const { error } = await supabase.from('friendships')
+    .update({ status: newStatus })
+    .eq('id', friendshipId);
+  if (error) {
+    showToast('Update failed: ' + error.message, 'error');
+    return;
+  }
+  // Inline update
+  const actionsDiv = button.closest('.friend-request-actions');
+  if (actionsDiv) {
+    if (newStatus === 'accepted') {
+      actionsDiv.outerHTML = `<span class="friend-badge"><i data-lucide="check-circle"></i> Friends</span>`;
+    } else {
+      actionsDiv.outerHTML = `<button class="btn-friend add" data-user-id="${actionsDiv.dataset.userId}"><i data-lucide="user-plus"></i> Add Friend</button>`;
+    }
+    lucide.createIcons({ target: actionsDiv.parentNode });
+  }
 }
 
-// ── FRIENDSHIP & MUTUAL HELPERS ─────────────────────
 async function getFriendshipStatus(userA, userB) {
   let { data } = await supabase
     .from('friendships')
@@ -261,20 +268,18 @@ async function getMutualCount(userA, userB) {
   return error ? 0 : data;
 }
 
-// ── JOINED DATE FORMAT ──────────────────────────────
 function formatJoinedDate(dateStr) {
   const date = new Date(dateStr);
   const month = date.toLocaleString('en-US', { month: 'short' });
   const year = date.getFullYear();
-  return `${month} ${year}`;            // e.g. "Apr 2026"
+  return `${month} ${year}`;
 }
 
-// ── SUGGESTED SECTION (Recently Joined + People You May Know + Invite CTA) ──
+// ── SUGGESTED SECTION ──
 async function loadSuggestedSection() {
   const container = document.getElementById('suggestedSection');
   if (!container) return;
 
-  // 1. Recently joined (last 14 days)
   const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   const { data: recentUsers } = await supabase
     .from('profiles')
@@ -284,7 +289,6 @@ async function loadSuggestedSection() {
     .order('created_at', { ascending: false })
     .limit(5);
 
-  // 2. People you may know (same department + level, not already friends)
   const { data: me } = await supabase
     .from('profiles')
     .select('department, level')
@@ -302,7 +306,6 @@ async function loadSuggestedSection() {
       .limit(10);
 
     if (candidates) {
-      // filter out already friends
       const notFriends = [];
       for (const c of candidates) {
         const status = await getFriendshipStatus(currentUserId, c.id);
@@ -312,7 +315,6 @@ async function loadSuggestedSection() {
     }
   }
 
-  // 3. Invite CTA: if neither recentUsers nor sameDeptLevelUsers exist, show invite
   const showInviteCTA = (!recentUsers || recentUsers.length === 0) &&
                         (!sameDeptLevelUsers || sameDeptLevelUsers.length === 0);
 
@@ -357,13 +359,12 @@ async function loadSuggestedSection() {
     ` : ''}
   `;
 
-  // Attach invite button events
   const copyBtn = document.getElementById('copyInviteLink');
   const whatsappBtn = document.getElementById('shareWhatsApp');
   if (copyBtn) {
     copyBtn.addEventListener('click', () => {
       navigator.clipboard.writeText('https://futiaspace.vercel.app').then(() => {
-        alert('Invite link copied!');
+        showToast('Invite link copied!', 'success');
       });
     });
   }
@@ -374,11 +375,9 @@ async function loadSuggestedSection() {
     });
   }
 
-  // Re‑init Lucide icons for any new elements
   lucide.createIcons({ target: container });
 }
 
-// ── REAL‑TIME FRIENDSHIP SUBSCRIPTION ───────────────
 function subscribeToFriendshipChanges() {
   if (realtimeChannel) supabase.removeChannel(realtimeChannel);
   realtimeChannel = supabase
@@ -394,7 +393,6 @@ function subscribeToFriendshipChanges() {
 
 const debouncedRefreshProfiles = debounce(loadProfiles, 500);
 
-// ── UTILS ───────────────────────────────────────────
 function debounce(fn, delay) {
   let timer;
   return function (...args) {
@@ -403,9 +401,6 @@ function debounce(fn, delay) {
   };
 }
 
-// (escapeHtml, getAvatarHtml, etc. are imported from utils.js)
-
-// Cleanup on navigation away
 window.addEventListener('hashchange', () => {
   if (!window.location.hash.startsWith('#/directory')) {
     if (realtimeChannel) supabase.removeChannel(realtimeChannel);

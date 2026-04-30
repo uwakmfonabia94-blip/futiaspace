@@ -2,6 +2,7 @@
 import { supabase } from '../supabase.js';
 import { getCurrentUser } from '../ui/shell.js';
 import { escapeHtml, timeAgo, getAvatarHtml } from '../lib/utils.js';
+import { showToast } from '../ui/toast.js';
 
 let realtimeChannel = null;
 
@@ -67,9 +68,9 @@ async function loadNotifications(userId) {
     switch (notif.type) {
       case 'friend_request':
         msg = `<strong>${escapeHtml(fromUser.full_name)}</strong> sent you a friend request.`;
-        if (notif.friend_request_id) {
+        if (notif.friend_request_id && !notif.read) {   // only show actions if unread? or always? we'll keep if not read
           actionButtons = `
-            <div class="notif-actions">
+            <div class="notif-actions" data-friendship-id="${notif.friend_request_id}">
               <button class="btn-accept-friend" data-friendship-id="${notif.friend_request_id}">Accept</button>
               <button class="btn-decline-friend" data-friendship-id="${notif.friend_request_id}">Decline</button>
             </div>
@@ -88,7 +89,7 @@ async function loadNotifications(userId) {
 
     return `
       <div class="notification-item ${notif.read ? 'read' : 'unread'}" data-notif-id="${notif.id}">
-        <div class="notif-avatar" onclick="window.location.hash='#/profile/${fromUser.id}'">
+        <div class="notif-avatar" onclick="event.stopPropagation(); window.openImageViewer('${escapeHtml(fromUser.avatar_url || '')}')" style="cursor:${fromUser.avatar_url ? 'pointer' : 'default'};">
           ${getAvatarHtml(fromUser)}
         </div>
         <div class="notif-content">
@@ -106,32 +107,55 @@ async function loadNotifications(userId) {
   container.querySelectorAll('.btn-accept-friend').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      await respondFriendRequest(btn.dataset.friendshipId, 'accepted', userId);
+      const friendshipId = btn.dataset.friendshipId;
+      await respondFriendRequest(friendshipId, 'accepted', btn, userId);
     });
   });
   container.querySelectorAll('.btn-decline-friend').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      await respondFriendRequest(btn.dataset.friendshipId, 'declined', userId);
+      const friendshipId = btn.dataset.friendshipId;
+      await respondFriendRequest(friendshipId, 'declined', btn, userId);
     });
   });
 
-  // Mark as read on click
+  // Mark as read on click (only if unread)
   container.querySelectorAll('.notification-item.unread').forEach(item => {
-    item.addEventListener('click', async () => {
+    item.addEventListener('click', async function handler() {
       const notifId = item.dataset.notifId;
       await supabase.from('notifications').update({ read: true }).eq('id', notifId);
       item.classList.remove('unread');
       item.classList.add('read');
       updateBadge(userId);
+      // Remove the event listener to avoid multiple triggers
+      item.removeEventListener('click', handler);
     });
   });
 }
 
-async function respondFriendRequest(friendshipId, status, userId) {
-  await supabase.from('friendships').update({ status }).eq('id', friendshipId);
-  await loadNotifications(userId);
+async function respondFriendRequest(friendshipId, status, button, userId) {
+  const { error } = await supabase.from('friendships').update({ status }).eq('id', friendshipId);
+  if (error) {
+    showToast('Update failed', 'error');
+    return;
+  }
+  // Update UI inline
+  const notifItem = button.closest('.notification-item');
+  const actionsDiv = button.closest('.notif-actions');
+  if (actionsDiv) {
+    if (status === 'accepted') {
+      actionsDiv.innerHTML = '<span style="color:var(--color-success); font-weight:500;">Friend request accepted</span>';
+    } else {
+      actionsDiv.innerHTML = '<span style="color:var(--color-text-muted); font-weight:500;">Friend request declined</span>';
+    }
+  }
+  // Also update the notification to read if not already
+  const notifId = notifItem.dataset.notifId;
+  await supabase.from('notifications').update({ read: true }).eq('id', notifId);
+  notifItem.classList.remove('unread');
+  notifItem.classList.add('read');
   updateBadge(userId);
+  showToast(status === 'accepted' ? 'Friend added!' : 'Request declined', 'success');
 }
 
 function subscribeNotifications(userId) {

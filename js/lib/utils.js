@@ -27,7 +27,8 @@ export function timeAgo(dateString) {
 export function getAvatarHtml(user) {
   if (!user) return '<div class="avatar-placeholder" style="background:#444;">?</div>';
   if (user.avatar_url) {
-    return `<img src="${escapeHtml(user.avatar_url)}" alt="${escapeHtml(user.full_name)}" class="avatar-img" />`;
+    // Clicking the image opens full‑screen viewer, stops card navigation
+    return `<img src="${escapeHtml(user.avatar_url)}" alt="${escapeHtml(user.full_name)}" class="avatar-img" onclick="event.stopPropagation(); window.openImageViewer('${escapeHtml(user.avatar_url)}')" />`;
   }
   const initials = (user.full_name || '?').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   const bg = stringToColor(user.id || '');

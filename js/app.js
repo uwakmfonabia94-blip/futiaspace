@@ -1,4 +1,5 @@
 // js/app.js
+import './ui/imageViewer.js';
 import { supabase } from './supabase.js';
 import { route, navigate, resolve } from './router.js';
 import { renderShell, updateShellUser } from './ui/shell.js';
@@ -37,7 +38,9 @@ route('/guidelines', renderGuidelines);
 supabase.auth.onAuthStateChange((event, session) => {
   if (event === 'SIGNED_IN') {
     updateShellUser(session.user);
-    if (['#/login', '#/signup', '#/landing'].includes(window.location.hash)) navigate('/directory');
+    if (['#/login', '#/signup', '#/landing'].includes(window.location.hash)) {
+      navigate('/directory');
+    }
   }
   if (event === 'SIGNED_OUT') {
     navigate('/landing');
@@ -45,11 +48,13 @@ supabase.auth.onAuthStateChange((event, session) => {
   }
 });
 
-// PWA install prompt
+// ── PWA install prompt (captured once) ──
 let deferredPrompt;
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredPrompt = e;
+  window.__deferredPrompt = e;   // exposed for shell.js
+  // Optionally show a small banner
   showInstallBanner();
 });
 
@@ -84,9 +89,13 @@ async function init() {
   renderShell();
   if (session) {
     updateShellUser(session.user);
-    if (['#/login', '#/signup', '#/landing'].includes(window.location.hash)) navigate('/directory');
+    if (['#/login', '#/signup', '#/landing'].includes(window.location.hash)) {
+      navigate('/directory');
+    }
   } else {
-    if (!['#/login', '#/signup', '#/landing'].includes(window.location.hash)) navigate('/landing');
+    if (!['#/login', '#/signup', '#/landing'].includes(window.location.hash)) {
+      navigate('/landing');
+    }
   }
   resolve();
 }

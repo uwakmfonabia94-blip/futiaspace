@@ -2843,3 +2843,196 @@ body.light-mode .profile-header::before {
 .verified-badge svg {
   display: block;
 }
+
+/* Larger profile avatar */
+.profile-avatar-large {
+  margin: -50px auto 20px; /* increase bottom margin for spacing */
+}
+
+.avatar-img-large,
+.avatar-placeholder-large {
+  width: 120px !important;
+  height: 120px !important;
+  border-width: 4px;
+}
+/* Active dot – place it outside the avatar (bottom-right corner) */
+.active-dot {
+  bottom: -2px;
+  right: -2px;
+  width: 20px;
+  height: 20px;
+  border-width: 3px;
+  background-color: var(--color-success);
+  box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 4px var(--color-success);
+}
+/* Stories container */
+.stories-container {
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 12px 8px;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
+.stories-scroll {
+  display: flex;
+  gap: 12px;
+}
+.story-item {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  width: 70px;
+  text-align: center;
+  cursor: pointer;
+}
+.story-ring {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  padding: 2px;
+  background: linear-gradient(45deg, #f09433, #d62976);
+}
+.story-ring.verified {
+  background: linear-gradient(45deg, #1D9BF0, #1D9BF0);
+}
+.story-ring .avatar-img,
+.story-ring .avatar-placeholder {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-card);
+}
+.story-name {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70px;
+}
+.empty-stories {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 12px;
+}
+
+/* Floating Action Button */
+.fab-post-btn {
+  position: fixed;
+  bottom: calc(var(--nav-h) + 16px);
+  right: 16px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--violet-600), var(--violet-400));
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 20px rgba(124,58,237,0.6);
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  z-index: 90;
+}
+.fab-post-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 24px rgba(124,58,237,0.8);
+}
+.fab-post-btn svg {
+  width: 28px;
+  height: 28px;
+  stroke-width: 2;
+}
+
+/* Header right side */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.chat-icon-btn {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.chat-icon-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--violet-300);
+}
+.chat-icon-btn .badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  font-size: 0.6rem;
+  background: var(--color-danger);
+  border: 2px solid var(--bg-base);
+}
+
+/* Remove old compose styles from feed (if any) */
+.feed-compose {
+  display: none;
+}
+
+/* Compose modal sizing */
+.compose-container {
+  width: calc(100% - 32px);
+  max-width: 480px;
+  background: var(--bg-surface);
+  border-radius: 20px;
+  padding: 20px;
+}
+.compose-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.compose-textarea {
+  width: 100%;
+  min-height: 120px;
+  background: var(--bg-input);
+  border-radius: 12px;
+  padding: 12px;
+  color: var(--text-primary);
+  resize: vertical;
+  font-size: 1rem;
+}
+.compose-char-count {
+  text-align: right;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+/* Enlarge profile avatar on profile page */
+.profile-avatar-large .avatar-img,
+.profile-avatar-large .avatar-placeholder-large {
+  width: 110px !important;
+  height: 110px !important;
+  border-radius: 50%;
+}
+
+/* Ensure the active dot scales properly */
+.profile-avatar-large .active-dot {
+  width: 18px;
+  height: 18px;
+  bottom: 6px;
+  right: 6px;
+}
+
+/* For settings page avatar preview */
+.settings-page .avatar-img-large,
+.settings-page .avatar-placeholder-large {
+  width: 100px;
+  height: 100px;
+}

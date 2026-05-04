@@ -4,6 +4,7 @@ import { getCurrentUser } from '../ui/shell.js';
 import { escapeHtml, timeAgo, getAvatarHtml } from '../lib/utils.js';
 import { showToast } from '../ui/toast.js';
 import { updateChatBadge } from './chatList.js';
+import { triggerPush } from '../lib/onesignal.js';
 
 let realtimeChannel = null;
 
@@ -46,22 +47,16 @@ export async function renderChatDetail(otherUserId) {
   `;
   lucide.createIcons({ target: main });
 
-  // Load messages and then mark them as read
   await loadMessages(otherUserId, currentUserId);
   scrollToBottom();
   subscribeToMessages(otherUserId, currentUserId);
-  
-  // CRITICAL: Mark unread messages as read and update badge
-  const marked = await markMessagesAsRead(otherUserId, currentUserId);
-  if (marked) {
-    await updateChatBadge(currentUserId);
-  }
+  await markMessagesAsRead(otherUserId, currentUserId);
 
   const sendBtn = document.getElementById('chatSendBtn');
   const input = document.getElementById('chatInput');
-  sendBtn.addEventListener('click', () => sendMessage(otherUserId, currentUserId));
+  sendBtn.addEventListener('click', () => sendMessage(otherUserId, currentUserId, partner.full_name));
   input.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') sendMessage(otherUserId, currentUserId);
+    if (e.key === 'Enter') sendMessage(otherUserId, currentUserId, partner.full_name);
   });
 }
 
@@ -100,28 +95,24 @@ async function loadMessages(otherUserId, currentUserId) {
 }
 
 async function markMessagesAsRead(otherUserId, currentUserId) {
-  try {
-    const { error } = await supabase
-      .from('messages')
-      .update({ read: true })
-      .eq('receiver_id', currentUserId)
-      .eq('sender_id', otherUserId)
-      .eq('status', 'accepted')
-      .eq('read', false);
-    
-    if (error) {
-      console.error('Failed to mark messages as read:', error);
-      return false;
+  const { error } = await supabase
+    .from('messages')
+    .update({ read: true })
+    .eq('receiver_id', currentUserId)
+    .eq('sender_id', otherUserId)
+    .eq('status', 'accepted')
+    .eq('read', false);
+  
+  if (!error) {
+    await updateChatBadge(currentUserId);
+    if (window.location.hash.startsWith('#/chats')) {
+      const { renderChatList } = await import('./chatList.js');
+      renderChatList();
     }
-    console.log('Messages marked as read successfully');
-    return true;
-  } catch (err) {
-    console.error('Exception in markMessagesAsRead:', err);
-    return false;
   }
 }
 
-async function sendMessage(receiverId, senderId) {
+async function sendMessage(receiverId, senderId, receiverName) {
   const input = document.getElementById('chatInput');
   const content = input.value.trim();
   if (!content) return;
@@ -139,6 +130,7 @@ async function sendMessage(receiverId, senderId) {
   container.insertAdjacentHTML('beforeend', messageHtml);
   scrollToBottom();
 
+  // Insert to DB
   const { error } = await supabase.from('messages').insert({
     sender_id: senderId,
     receiver_id: receiverId,
@@ -153,6 +145,15 @@ async function sendMessage(receiverId, senderId) {
     return;
   }
   input.value = '';
+
+  // Trigger push notification to receiver
+  const currentUser = getCurrentUser();
+  await triggerPush(
+    receiverId,
+    `New message from ${currentUser.full_name}`,
+    content.substring(0, 120),
+    { type: 'message', chat_id: senderId }
+  );
 }
 
 function subscribeToMessages(otherUserId, currentUserId) {
@@ -167,7 +168,6 @@ function subscribeToMessages(otherUserId, currentUserId) {
     }, async () => {
       await loadMessages(otherUserId, currentUserId);
       await markMessagesAsRead(otherUserId, currentUserId);
-      await updateChatBadge(currentUserId);
       scrollToBottom();
     })
     .subscribe();

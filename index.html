@@ -46,6 +46,21 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+
+  <!-- OneSignal SDK with bell disabled -->
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+<script>
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  OneSignalDeferred.push(function(OneSignal) {
+    OneSignal.init({
+      appId: "bf680778-4245-4748-90a7-f4ed8326f56d",
+      notifyButton: {
+        enable: false,   // Disable the floating bell
+      },
+    });
+  });
+</script>
+  
 </head>
 <body>
   <div id="app"></div>

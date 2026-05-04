@@ -4,13 +4,13 @@ import { getCurrentUser } from '../ui/shell.js';
 import { escapeHtml, timeAgo, getAvatarHtml, getVerifiedBadge } from '../lib/utils.js';
 import { showToast } from '../ui/toast.js';
 import { showConfirm } from '../ui/modal.js';
+import { triggerPush } from '../lib/onesignal.js';
 
 let currentViewerId = null;
 
 export async function renderProfile(userId) {
   const main = document.getElementById('mainContent');
   if (!main) return;
-
   const viewer = getCurrentUser();
   currentViewerId = viewer.id;
   const isOwnProfile = userId === currentViewerId;
@@ -142,9 +142,21 @@ export async function renderProfile(userId) {
     const addBtn = document.querySelector('.btn-add-friend');
     if (addBtn) {
       addBtn.addEventListener('click', async () => {
-        await supabase.from('friendships').insert({ sender_id: currentViewerId, receiver_id: userId, status: 'pending' });
-        showToast('Friend request sent', 'success');
-        renderProfile(userId);
+        const { error } = await supabase.from('friendships').insert({ sender_id: currentViewerId, receiver_id: userId, status: 'pending' });
+        if (!error) {
+          showToast('Friend request sent', 'success');
+          renderProfile(userId);
+          // Push notification
+          const currentUser = getCurrentUser();
+          await triggerPush(
+            userId,
+            `Friend request from ${currentUser.full_name}`,
+            `${currentUser.full_name} wants to connect with you.`,
+            { type: 'friend_request', from_user_id: currentViewerId }
+          );
+        } else {
+          showToast('Error sending request', 'error');
+        }
       });
     }
     const acceptBtn = document.querySelector('.btn-accept-friend');
@@ -167,9 +179,7 @@ export async function renderProfile(userId) {
 }
 
 function renderProfilePost(post, isOwn, authorName, isVerified) {
-  const feeling = post.feeling_type
-    ? feelings.find(f => f.id === post.feeling_type)
-    : null;
+  const feeling = post.feeling_type ? feelings.find(f => f.id === post.feeling_type) : null;
   const feelingHtml = feeling
     ? `<div class="feeling-text"><img src="https://twemoji.maxcdn.com/v/14.0.2/72x72/${feeling.code.toString(16)}.png" class="twemoji-inline" alt="${feeling.label}" /> ${authorName} is feeling ${feeling.label}</div>`
     : '';

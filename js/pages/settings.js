@@ -2,6 +2,7 @@
 import { supabase } from '../supabase.js';
 import { getCurrentUser } from '../ui/shell.js';
 import { showToast } from '../ui/toast.js';
+import { requestPushPermission } from '../lib/onesignal.js';
 
 export async function renderSettings() {
   const main = document.getElementById('mainContent');
@@ -12,7 +13,7 @@ export async function renderSettings() {
 
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('full_name, department, level, gender, bio, avatar_url, avatar_path, whatsapp_number, referral_code')
+    .select('full_name, department, level, gender, bio, avatar_url, avatar_path, whatsapp_number, referral_code, onesignal_player_id')
     .eq('id', userId)
     .single();
 
@@ -20,6 +21,8 @@ export async function renderSettings() {
     main.innerHTML = `<div style="padding:20px;">Profile not found.</div>`;
     return;
   }
+
+  const pushEnabled = !!profile.onesignal_player_id;
 
   main.innerHTML = `
     <div class="settings-page">
@@ -78,16 +81,31 @@ export async function renderSettings() {
             </div>
           </div>
         ` : ''}
+        
+        <!-- Push Notifications Section -->
+        <div class="form-group">
+          <label>Push Notifications</label>
+          <div style="background:var(--bg-elevated); padding:14px; border-radius:var(--radius-md); margin-top:4px;">
+            <p style="margin-bottom:10px; font-size:0.85rem;">
+              ${pushEnabled 
+                ? '✅ Notifications are enabled. You will receive updates about likes, comments, messages, and friend requests.' 
+                : '🔕 Notifications are disabled. Enable them to stay updated.'}
+            </p>
+            ${!pushEnabled ? `
+              <button type="button" class="btn btn-primary" id="enablePushBtn" style="margin-top:4px;">
+                <i data-lucide="bell"></i> Enable Notifications
+              </button>
+            ` : ''}
+          </div>
+        </div>
+        
         <button type="submit" class="btn btn-primary" id="saveBtn">Save Changes</button>
       </form>
 
-      <!-- Hidden file input -->
       <input type="file" id="avatarFileInput" accept="image/*" style="display:none" />
-
-      <!-- Crop Modal -->
       <div id="cropModal" class="compose-overlay" style="display:none;">
         <div class="crop-container" style="background:var(--bg-surface); padding:20px; border-radius:20px; width:90%; max-width:400px;">
-          <h3 style="margin-bottom:12px;">Crop your photo</h3>
+          <h3>Crop your photo</h3>
           <div style="max-height:350px; overflow:hidden;">
             <img id="cropImage" style="max-width:100%;" />
           </div>
@@ -99,13 +117,12 @@ export async function renderSettings() {
       </div>
     </div>
   `;
-
   lucide.createIcons({ target: main });
 
-  // Load departments (disabled, just for display)
+  // Load departments
   await loadDepartmentsDropdown(profile.department);
 
-  // Avatar change logic
+  // Avatar change logic (unchanged)
   const fileInput = document.getElementById('avatarFileInput');
   const changeBtn = document.getElementById('changeAvatarBtn');
   const cropModal = document.getElementById('cropModal');
@@ -115,9 +132,7 @@ export async function renderSettings() {
   let cropper = null;
   let selectedFile = null;
 
-  changeBtn.addEventListener('click', () => {
-    fileInput.click();
-  });
+  changeBtn.addEventListener('click', () => fileInput.click());
 
   fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
@@ -160,11 +175,9 @@ export async function renderSettings() {
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
     const path = `${userId}/avatar.jpg`;
 
-    // Show loading state
     confirmCrop.disabled = true;
     confirmCrop.innerHTML = '<span class="spinner"></span> Uploading...';
 
-    // Upload to storage
     const { error: uploadError } = await supabase.storage
       .from('avatars')
       .upload(path, blob, { upsert: true });
@@ -176,10 +189,7 @@ export async function renderSettings() {
       return;
     }
 
-    // Get public URL
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
-
-    // Update profile
     const { error: updateError } = await supabase
       .from('profiles')
       .update({ avatar_url: publicUrl, avatar_path: path })
@@ -189,7 +199,6 @@ export async function renderSettings() {
       showToast('Failed to update profile: ' + updateError.message, 'error');
     } else {
       showToast('Photo updated!', 'success');
-      // Update preview in UI
       const avatarContainer = document.getElementById('avatarContainer');
       const existingImg = document.getElementById('profileAvatarPreview');
       const existingPlaceholder = document.getElementById('profileAvatarPlaceholder');
@@ -202,7 +211,6 @@ export async function renderSettings() {
       }
     }
 
-    // Cleanup
     cropModal.classList.remove('visible');
     setTimeout(() => {
       cropModal.style.display = 'none';
@@ -214,12 +222,24 @@ export async function renderSettings() {
     confirmCrop.innerHTML = 'Confirm';
   });
 
-  // Close modal on overlay click
   cropModal.addEventListener('click', (e) => {
-    if (e.target === cropModal) {
-      cancelCrop.click();
-    }
+    if (e.target === cropModal) cancelCrop.click();
   });
+
+  // Push notifications button
+  const enablePushBtn = document.getElementById('enablePushBtn');
+  if (enablePushBtn) {
+    enablePushBtn.addEventListener('click', async () => {
+      const success = await requestPushPermission(userId);
+      if (success) {
+        showToast('Notifications enabled! You will now receive updates.', 'success');
+        // Reload settings page to update the UI and show that push is enabled
+        renderSettings();
+      } else {
+        showToast('Could not enable notifications. Please check browser permissions.', 'error');
+      }
+    });
+  }
 
   // Copy referral link
   if (profile.referral_code) {
@@ -252,9 +272,6 @@ export async function renderSettings() {
       showToast('Update failed: ' + updateError.message, 'error');
     } else {
       showToast('Profile updated!', 'success');
-      // Update shell user name if needed
-      const currentUser = getCurrentUser();
-      if (currentUser) currentUser.user_metadata.full_name = fullName;
     }
   });
 }

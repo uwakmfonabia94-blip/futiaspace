@@ -2,8 +2,9 @@
 import { supabase } from '../supabase.js';
 import { getCurrentUser } from '../ui/shell.js';
 import { escapeHtml, timeAgo, getAvatarHtml, getVerifiedBadge } from '../lib/utils.js';
-import { renderFeedSection } from './feedSection.js';
+import { renderFeedSection, openPostCompose } from './feedSection.js';
 import { showToast } from '../ui/toast.js';
+import { triggerPush } from '../lib/onesignal.js';
 
 let currentUserId = null;
 let profileOffset = 0;
@@ -12,17 +13,16 @@ let hasMoreProfiles = true;
 let isLoadingProfiles = false;
 let studentObserver = null;
 let peopleYouMayKnowOffset = 0;
-let peopleYouMayKnowAll = [];
 
 export async function renderDirectory() {
   const main = document.getElementById('mainContent');
   if (!main) return;
-
   const user = getCurrentUser();
   currentUserId = user.id;
 
   main.innerHTML = `
     <div class="home-page">
+      <div id="storiesContainer" class="stories-container"></div>
       <div id="feedSectionContainer"></div>
       <div id="peopleDiscoverySection"></div>
       <div id="campusActivitySection"></div>
@@ -33,11 +33,13 @@ export async function renderDirectory() {
         <div id="studentSentinel" style="height:10px;"></div>
       </div>
     </div>
+    <button id="fabPostBtn" class="fab-post-btn"><i data-lucide="plus"></i></button>
   `;
 
   const lastVisit = localStorage.getItem('futiaspace-lastVisit');
   localStorage.setItem('futiaspace-lastVisit', new Date().toISOString());
 
+  await loadStories();
   renderFeedSection(document.getElementById('feedSectionContainer'), lastVisit, currentUserId);
 
   await Promise.all([
@@ -49,19 +51,66 @@ export async function renderDirectory() {
   ]);
 
   setupStudentInfiniteScroll(lastVisit);
+  setupFAB();
 }
 
-function setupStudentInfiniteScroll(lastVisit) {
-  if (studentObserver) studentObserver.disconnect();
-  studentObserver = new IntersectionObserver((entries) => {
-    if (entries[0].isIntersecting && hasMoreProfiles && !isLoadingProfiles) {
-      loadStudentGrid(false, lastVisit);
+function setupFAB() {
+  const fab = document.getElementById('fabPostBtn');
+  if (fab) {
+    fab.addEventListener('click', () => {
+      openPostCompose();
+    });
+  }
+}
+
+// ─── STORIES ────────────────────────────────────────────────
+async function loadStories() {
+  const container = document.getElementById('storiesContainer');
+  if (!container) return;
+
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  let { data: activeUsers, error } = await supabase
+    .from('profiles')
+    .select('id, full_name, avatar_url, is_verified, last_active')
+    .gte('last_active', fiveMinutesAgo)
+    .neq('id', currentUserId)
+    .order('last_active', { ascending: false })
+    .limit(10);
+
+  if (!activeUsers || activeUsers.length < 6) {
+    const { data: verifiedUsers } = await supabase
+      .from('profiles')
+      .select('id, full_name, avatar_url, is_verified, last_active')
+      .eq('is_verified', true)
+      .neq('id', currentUserId)
+      .limit(10);
+    if (verifiedUsers) {
+      activeUsers = [...(activeUsers || []), ...verifiedUsers];
+      activeUsers = activeUsers.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
     }
-  }, { threshold: 0.1 });
-  const sentinel = document.getElementById('studentSentinel');
-  if (sentinel) studentObserver.observe(sentinel);
+  }
+
+  if (!activeUsers || activeUsers.length === 0) {
+    container.innerHTML = '<p class="empty-stories">No active users right now.</p>';
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="stories-scroll">
+      ${activeUsers.map(user => `
+        <div class="story-item clickable" data-user-id="${user.id}" onclick="window.location.hash='#/profile/${user.id}'">
+          <div class="story-ring ${user.is_verified ? 'verified' : ''}">
+            ${getAvatarHtml(user)}
+          </div>
+          <span class="story-name">${escapeHtml(user.full_name.split(' ')[0])}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  lucide.createIcons({ target: container });
 }
 
+// ─── PEOPLE DISCOVERY (Recently Joined) ──────────────────────
 async function loadPeopleDiscovery(lastVisit) {
   const container = document.getElementById('peopleDiscoverySection');
   if (!container) return;
@@ -93,6 +142,7 @@ async function loadPeopleDiscovery(lastVisit) {
   lucide.createIcons({ target: container });
 }
 
+// ─── CAMPUS ACTIVITY ─────────────────────────────────────────
 async function loadCampusActivity(lastVisit) {
   const container = document.getElementById('campusActivitySection');
   if (!container) return;
@@ -171,10 +221,11 @@ function getInitials(name) {
   return (name || '?').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 }
 
+// ─── PEOPLE YOU MAY KNOW (same department & level) ────────────
 async function loadPeopleYouMayKnow(lastVisit, reset = true) {
   const container = document.getElementById('peopleYouMayKnowSection');
   if (!container) return;
-  if (reset) { peopleYouMayKnowOffset = 0; peopleYouMayKnowAll = []; }
+  if (reset) { peopleYouMayKnowOffset = 0; }
   const { data: me } = await supabase.from('profiles').select('department, level').eq('id', currentUserId).single();
   if (!me) { container.innerHTML = ''; return; }
   const { data: candidates } = await supabase
@@ -184,13 +235,15 @@ async function loadPeopleYouMayKnow(lastVisit, reset = true) {
     .eq('level', me.level)
     .neq('id', currentUserId)
     .range(peopleYouMayKnowOffset, peopleYouMayKnowOffset + 5);
-  if (!candidates || candidates.length === 0) { if (reset) container.innerHTML = ''; return; }
+  if (!candidates || candidates.length === 0) {
+    if (reset) container.innerHTML = '';
+    return;
+  }
   const notFriends = [];
   for (const c of candidates) {
     const status = await getFriendshipStatus(currentUserId, c.id);
     if (!status || (status.status !== 'accepted' && status.status !== 'pending')) {
       notFriends.push(c);
-      peopleYouMayKnowAll.push(c);
     }
   }
   if (reset) {
@@ -218,7 +271,12 @@ async function loadPeopleYouMayKnow(lastVisit, reset = true) {
   lucide.createIcons({ target: container });
   attachFriendButtons(container);
   const loadMoreBtn = document.getElementById('loadMorePeopleBtn');
-  if (loadMoreBtn) loadMoreBtn.addEventListener('click', () => { peopleYouMayKnowOffset += 5; loadPeopleYouMayKnow(lastVisit, false); });
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener('click', () => {
+      peopleYouMayKnowOffset += 5;
+      loadPeopleYouMayKnow(lastVisit, false);
+    });
+  }
 }
 
 function attachFriendButtons(container) {
@@ -226,15 +284,27 @@ function attachFriendButtons(container) {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const userId = btn.dataset.userId;
-      await supabase.from('friendships').insert({ sender_id: currentUserId, receiver_id: userId, status: 'pending' });
-      btn.disabled = true;
-      btn.innerHTML = '<i data-lucide="user-check"></i> Sent';
-      lucide.createIcons({ target: btn });
-      showToast('Friend request sent', 'success');
+      const { error } = await supabase.from('friendships').insert({ sender_id: currentUserId, receiver_id: userId, status: 'pending' });
+      if (!error) {
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="user-check"></i> Sent';
+        lucide.createIcons({ target: btn });
+        showToast('Friend request sent', 'success');
+        const currentUser = getCurrentUser();
+        await triggerPush(
+          userId,
+          `Friend request from ${currentUser.full_name}`,
+          `${currentUser.full_name} wants to connect with you.`,
+          { type: 'friend_request', from_user_id: currentUserId }
+        );
+      } else {
+        showToast('Error sending request', 'error');
+      }
     });
   });
 }
 
+// ─── PRODUCT SPOTLIGHT ───────────────────────────────────────
 async function loadProductSpotlight(lastVisit) {
   const container = document.getElementById('productSpotlightSection');
   if (!container) return;
@@ -275,6 +345,18 @@ async function loadProductSpotlight(lastVisit) {
   });
 }
 
+// ─── STUDENT GRID & INFINITE SCROLL ──────────────────────────
+function setupStudentInfiniteScroll(lastVisit) {
+  if (studentObserver) studentObserver.disconnect();
+  studentObserver = new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting && hasMoreProfiles && !isLoadingProfiles) {
+      loadStudentGrid(false, lastVisit);
+    }
+  }, { threshold: 0.1 });
+  const sentinel = document.getElementById('studentSentinel');
+  if (sentinel) studentObserver.observe(sentinel);
+}
+
 async function loadStudentGrid(reset = false, lastVisit) {
   if (isLoadingProfiles || (!hasMoreProfiles && !reset)) return;
   isLoadingProfiles = true;
@@ -293,7 +375,6 @@ async function loadStudentGrid(reset = false, lastVisit) {
     isLoadingProfiles = false;
     return;
   }
-  // Pin current user to the top if present in this batch (only when reset = true)
   let sortedProfiles = [...profiles];
   if (reset) {
     const selfIndex = sortedProfiles.findIndex(p => p.id === currentUserId);
@@ -318,11 +399,20 @@ async function loadStudentGrid(reset = false, lastVisit) {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const userId = btn.dataset.userId;
-      await supabase.from('friendships').insert({ sender_id: currentUserId, receiver_id: userId, status: 'pending' });
-      btn.disabled = true;
-      btn.innerHTML = '<i data-lucide="user-check"></i> Sent';
-      lucide.createIcons({ target: btn });
-      showToast('Friend request sent', 'success');
+      const { error } = await supabase.from('friendships').insert({ sender_id: currentUserId, receiver_id: userId, status: 'pending' });
+      if (!error) {
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="user-check"></i> Sent';
+        lucide.createIcons({ target: btn });
+        showToast('Friend request sent', 'success');
+        const currentUser = getCurrentUser();
+        await triggerPush(
+          userId,
+          `Friend request from ${currentUser.full_name}`,
+          `${currentUser.full_name} wants to connect with you.`,
+          { type: 'friend_request', from_user_id: currentUserId }
+        );
+      }
     });
   });
 }
@@ -333,7 +423,7 @@ function renderProfileCard(profile, lastVisit) {
   const verifiedBadge = getVerifiedBadge(profile.is_verified, profile.id);
   return `
     <div class="profile-card" data-user-id="${profile.id}" onclick="window.location.hash='#/profile/${profile.id}'">
-      ${isNew ? '<span class="badge new-badge">New</span>' : ''}
+      ${isNew ? '<span class="new-badge">New</span>' : ''}
       <div class="card-avatar">${getAvatarHtml(profile)}</div>
       <div class="card-info">
         <h3>${escapeHtml(profile.full_name)} ${verifiedBadge}</h3>

@@ -21,13 +21,15 @@ export function renderShell() {
         <div class="logo-container"><img src="logo.svg" alt="FutiaSpace" /></div>
         <span class="logo-text">FutiaSpace</span>
       </div>
-      <button class="search-icon-btn" id="searchIconBtn"><i data-lucide="search"></i></button>
+      <div class="header-right">
+        <button class="search-icon-btn" id="searchIconBtn"><i data-lucide="search"></i></button>
+        <button class="chat-icon-btn" id="chatIconBtn"><i data-lucide="message-circle"></i><span id="chatBadge" class="badge" style="display:none;"></span></button>
+      </div>
     </header>
     <main class="main-content" id="mainContent"></main>
     <nav class="bottom-nav" id="bottomNav" style="display:none">
       <a href="#/directory" class="nav-item" data-route="/directory"><i data-lucide="home"></i><span>Home</span></a>
       <a href="#/marketplace" class="nav-item" data-route="/marketplace"><i data-lucide="shopping-bag"></i><span>Marketplace</span></a>
-      <a href="#/chats" class="nav-item" data-route="/chats"><i data-lucide="message-circle"></i><span>Chats</span><span id="chatBadge" class="badge" style="display:none;"></span></a>
       <a href="#/notifications" class="nav-item" data-route="/notifications"><i data-lucide="bell"></i><span>Notifications</span><span id="notificationBadge" class="badge" style="display:none;"></span></a>
       <a href="#/profile" class="nav-item" data-route="/profile"><i data-lucide="user"></i><span>Profile</span></a>
     </nav>
@@ -45,7 +47,7 @@ export function renderShell() {
 
   lucide.createIcons();
 
-  // Drawer
+  // Drawer logic
   const hamburgerBtn = document.getElementById('hamburgerBtn');
   const drawer = document.getElementById('drawer');
   const overlay = document.getElementById('drawerOverlay');
@@ -77,7 +79,10 @@ export function renderShell() {
   // Search button
   document.getElementById('searchIconBtn').addEventListener('click', () => navigate('/search'));
 
-  // Install app
+  // Chat button in header
+  document.getElementById('chatIconBtn').addEventListener('click', () => navigate('/chats'));
+
+  // Install app from drawer
   document.getElementById('installAppBtn').addEventListener('click', async () => {
     if (window.matchMedia('(display-mode: standalone)').matches) { showToast('App already installed!', 'info'); return; }
     if (window.__deferredPrompt) {
@@ -96,7 +101,7 @@ export function renderShell() {
     drawer.classList.remove('open'); overlay.classList.remove('open');
   });
 
-  // Active nav highlight
+  // Active nav highlight (only for bottom nav items)
   const setActiveNav = () => {
     const hash = window.location.hash.slice(1) || '/directory';
     document.querySelectorAll('.nav-item').forEach(el => {

@@ -3,6 +3,7 @@ import { supabase } from './supabase.js';
 import { route, navigate, resolve } from './router.js';
 import { renderShell, updateShellUser, getCurrentUser } from './ui/shell.js';
 import { startActiveTracking, stopActiveTracking } from './lib/activity.js';
+import { initOneSignal, detectIOS, triggerPush } from './lib/onesignal.js';
 import { renderLanding } from './pages/landing.js';
 import { renderLogin } from './pages/login.js';
 import { renderSignup } from './pages/signup.js';
@@ -52,17 +53,27 @@ route('/privacy', renderPrivacy);
 route('/about', renderAbout);
 route('/guidelines', renderGuidelines);
 
-// Auth state listener
+// --- Auth state listener (CRITICAL: redirects after login) ---
 supabase.auth.onAuthStateChange(async (event, session) => {
   if (event === 'SIGNED_IN') {
     updateShellUser(session.user);
     startActiveTracking();
-    if (['#/login', '#/signup', '#/landing'].includes(window.location.hash)) navigate('/directory');
-    // Update badges after sign in
-    if (session.user) {
-      updateBadge(session.user.id);
-      updateChatBadge(session.user.id);
+    
+    const isIOS = await detectIOS();
+    if (isIOS) {
+      await supabase.from('profiles').update({ is_ios: true }).eq('id', session.user.id);
+    } else {
+      await initOneSignal(session.user.id);
     }
+    
+    // Redirect away from auth pages to directory
+    const currentHash = window.location.hash;
+    if (['#/login', '#/signup', '#/landing'].includes(currentHash)) {
+      navigate('/directory');
+    }
+    
+    updateBadge(session.user.id);
+    updateChatBadge(session.user.id);
   }
   if (event === 'SIGNED_OUT') {
     stopActiveTracking();
@@ -74,7 +85,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
   }
 });
 
-// Global handler for token errors (invalid refresh token)
+// Global handler for token errors
 window.addEventListener('unhandledrejection', (event) => {
   const errorMsg = event.reason?.message || event.reason?.error_description || '';
   if (errorMsg.includes('Invalid Refresh Token') || errorMsg.includes('refresh_token_not_found')) {
@@ -87,90 +98,75 @@ window.addEventListener('unhandledrejection', (event) => {
   }
 });
 
-// --- PWA Install Prompt (on user interaction, not just timeout) ---
-let deferredPrompt = null;
-let installPromptShown = false;
+// --- PWA Install Banner (only after login & scroll) ---
+let installPrompt = null;
+let installBannerShown = false;
 
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
-  deferredPrompt = e;
-  // Optionally show a custom install banner (but we already have a button in drawer)
-  if (!installPromptShown && !localStorage.getItem('futiaspace-install-dismissed')) {
-    // Show a small banner at the bottom
-    const banner = document.createElement('div');
-    banner.id = 'installBanner';
-    banner.className = 'install-banner';
-    banner.innerHTML = `
-      <span>📲 Install FutiaSpace for quick access</span>
-      <div class="install-actions">
-        <button id="installNowBtn" class="btn btn-sm btn-primary">Install</button>
-        <button id="installLaterBtn" class="btn btn-sm btn-secondary">Remind later</button>
-      </div>
-    `;
-    document.body.appendChild(banner);
-    document.getElementById('installNowBtn').addEventListener('click', async () => {
-      if (deferredPrompt) {
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        if (outcome === 'accepted') showToast('Installing FutiaSpace...', 'success');
-        deferredPrompt = null;
-      }
-      banner.remove();
-      localStorage.setItem('futiaspace-install-dismissed', '1');
-    });
-    document.getElementById('installLaterBtn').addEventListener('click', () => {
-      banner.remove();
-      localStorage.setItem('futiaspace-install-dismissed', '1');
-    });
-    installPromptShown = true;
-  }
+  installPrompt = e;
 });
 
-// Also expose the deferred prompt to the drawer's "Install App" button in shell.js
-window.__deferredPrompt = deferredPrompt;
-// Update the reference when the prompt changes
-setInterval(() => { window.__deferredPrompt = deferredPrompt; }, 1000);
+async function maybeShowInstallBanner() {
+  if (installBannerShown) return;
+  if (localStorage.getItem('futiaspace-install-dismissed')) return;
+  if (window.matchMedia('(display-mode: standalone)').matches) return;
+  
+  const user = getCurrentUser();
+  if (!user) return;
+  if (!installPrompt) return;
+  
+  const banner = document.createElement('div');
+  banner.id = 'installBanner';
+  banner.className = 'install-banner';
+  banner.innerHTML = `
+    <span>📲 Install FutiaSpace for quick access</span>
+    <div class="install-actions">
+      <button id="installNowBtn" class="btn btn-sm btn-primary">Install</button>
+      <button id="installLaterBtn" class="btn btn-sm btn-secondary">Remind later</button>
+    </div>
+  `;
+  document.body.appendChild(banner);
+  
+  document.getElementById('installNowBtn').addEventListener('click', async () => {
+    if (installPrompt) {
+      installPrompt.prompt();
+      const { outcome } = await installPrompt.userChoice;
+      if (outcome === 'accepted') showToast('Installing FutiaSpace...', 'success');
+      installPrompt = null;
+    }
+    banner.remove();
+    localStorage.setItem('futiaspace-install-dismissed', '1');
+    installBannerShown = true;
+  });
+  
+  document.getElementById('installLaterBtn').addEventListener('click', () => {
+    banner.remove();
+    localStorage.setItem('futiaspace-install-dismissed', '1');
+    installBannerShown = true;
+  });
+  
+  installBannerShown = true;
+}
+
+function setupInstallBannerOnScroll() {
+  const mainContent = document.getElementById('mainContent');
+  if (mainContent) {
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && getCurrentUser()) {
+        maybeShowInstallBanner();
+        observer.disconnect();
+      }
+    }, { threshold: 0.2 });
+    observer.observe(mainContent);
+  }
+}
 
 // Offline / Online toasts
 window.addEventListener('offline', () => showToast('You are offline', 'error'));
 window.addEventListener('online', () => showToast('Back online', 'success'));
 
-// Optional: First click anywhere also triggers install banner? Already handled by beforeinstallprompt.
-// But we can also remind users after 15 seconds if not installed.
-setTimeout(() => {
-  if (!localStorage.getItem('futiaspace-install-dismissed') && !window.matchMedia('(display-mode: standalone)').matches) {
-    if (!deferredPrompt) return;
-    const banner = document.getElementById('installBanner');
-    if (!banner) {
-      const bannerDiv = document.createElement('div');
-      bannerDiv.id = 'installBanner';
-      bannerDiv.className = 'install-banner';
-      bannerDiv.innerHTML = `
-        <span>📲 Install FutiaSpace for quick access</span>
-        <div class="install-actions">
-          <button id="installNowBtnTimeout" class="btn btn-sm btn-primary">Install</button>
-          <button id="installLaterBtnTimeout" class="btn btn-sm btn-secondary">Remind later</button>
-        </div>
-      `;
-      document.body.appendChild(bannerDiv);
-      document.getElementById('installNowBtnTimeout').addEventListener('click', async () => {
-        if (deferredPrompt) {
-          deferredPrompt.prompt();
-          const { outcome } = await deferredPrompt.userChoice;
-          if (outcome === 'accepted') showToast('Installing FutiaSpace...', 'success');
-          deferredPrompt = null;
-        }
-        bannerDiv.remove();
-        localStorage.setItem('futiaspace-install-dismissed', '1');
-      });
-      document.getElementById('installLaterBtnTimeout').addEventListener('click', () => {
-        bannerDiv.remove();
-        localStorage.setItem('futiaspace-install-dismissed', '1');
-      });
-    }
-  }
-}, 15000);
-
+// --- Initialization ---
 async function init() {
   const { data: { session }, error: sessionError } = await supabase.auth.getSession();
   if (sessionError && sessionError.message?.includes('Invalid Refresh Token')) {
@@ -185,7 +181,18 @@ async function init() {
     startActiveTracking();
     updateBadge(session.user.id);
     updateChatBadge(session.user.id);
-    if (['#/login', '#/signup', '#/landing'].includes(window.location.hash)) navigate('/directory');
+    
+    const isIOS = await detectIOS();
+    if (isIOS) {
+      await supabase.from('profiles').update({ is_ios: true }).eq('id', session.user.id);
+    } else {
+      await initOneSignal(session.user.id);
+    }
+    
+    if (['#/login', '#/signup', '#/landing'].includes(window.location.hash)) {
+      navigate('/directory');
+    }
+    setupInstallBannerOnScroll();
   } else {
     if (!['#/login', '#/signup', '#/landing', '#/forgot-password', '#/update-password'].includes(window.location.hash)) {
       navigate('/landing');

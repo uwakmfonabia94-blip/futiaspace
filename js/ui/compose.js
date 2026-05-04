@@ -1,8 +1,12 @@
 // js/ui/compose.js
 import { supabase } from '../supabase.js';
 import { getCurrentUser } from './shell.js';
+import { showToast } from './toast.js';
 
 export function openCompose() {
+  const user = getCurrentUser();
+  if (!user) return;
+
   let overlay = document.getElementById('composeOverlay');
   if (!overlay) {
     overlay = document.createElement('div');
@@ -12,7 +16,7 @@ export function openCompose() {
       <div class="compose-container">
         <div class="compose-header">
           <button class="compose-cancel-btn"><i data-lucide="x"></i></button>
-          <span class="compose-title">New Post</span>
+          <span class="compose-title">Create Post</span>
           <button class="btn btn-sm btn-primary" id="postSubmitBtn" disabled>Post</button>
         </div>
         <textarea id="composeText" class="compose-textarea" placeholder="What's happening on campus…?" maxlength="500"></textarea>
@@ -44,11 +48,17 @@ export function openCompose() {
       submitBtn.textContent = 'Posting...';
       const { error } = await supabase.from('posts').insert({ user_id: user.id, content });
       if (error) {
-        alert('Failed to post: ' + error.message);
+        showToast('Failed to post: ' + error.message, 'error');
         submitBtn.disabled = false;
         submitBtn.textContent = 'Post';
       } else {
         closeCompose();
+        showToast('Post shared!', 'success');
+        if (window.location.hash.startsWith('#/directory')) {
+          const { loadLatestPosts } = await import('../pages/feedSection.js');
+          const lastVisit = localStorage.getItem('futiaspace-lastVisit');
+          loadLatestPosts(user.id, lastVisit, true);
+        }
       }
     });
   }
@@ -64,9 +74,12 @@ export function closeCompose() {
     overlay.classList.remove('visible');
     setTimeout(() => {
       overlay.style.display = 'none';
-      overlay.querySelector('#composeText').value = '';
-      overlay.querySelector('.compose-char-count').textContent = '0 / 500';
-      overlay.querySelector('#postSubmitBtn').disabled = true;
+      const textarea = overlay.querySelector('#composeText');
+      if (textarea) textarea.value = '';
+      const charCount = overlay.querySelector('.compose-char-count');
+      if (charCount) charCount.textContent = '0 / 500';
+      const submitBtn = overlay.querySelector('#postSubmitBtn');
+      if (submitBtn) submitBtn.disabled = true;
     }, 200);
   }
 }

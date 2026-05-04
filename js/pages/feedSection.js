@@ -4,31 +4,23 @@ import { getCurrentUser } from '../ui/shell.js';
 import { escapeHtml, timeAgo, getAvatarHtml, getVerifiedBadge } from '../lib/utils.js';
 import { showToast } from '../ui/toast.js';
 import { showConfirm } from '../ui/modal.js';
+import { triggerPush } from '../lib/onesignal.js';
+import { openCompose } from '../ui/compose.js';
 
 export const feelings = [
-  { id: 'happy',    label: 'Happy',    code: 0x1F60A },
-  { id: 'sad',      label: 'Sad',      code: 0x1F622 },
-  { id: 'angry',    label: 'Angry',    code: 0x1F620 },
-  { id: 'excited',  label: 'Excited',  code: 0x1F929 },
-  { id: 'tired',    label: 'Tired',    code: 0x1F62B },
-  { id: 'blessed',  label: 'Blessed',  code: 0x1F60C },
+  { id: 'happy', label: 'Happy', code: 0x1F60A },
+  { id: 'sad', label: 'Sad', code: 0x1F622 },
+  { id: 'angry', label: 'Angry', code: 0x1F620 },
+  { id: 'excited', label: 'Excited', code: 0x1F929 },
+  { id: 'tired', label: 'Tired', code: 0x1F62B },
+  { id: 'blessed', label: 'Blessed', code: 0x1F60C },
   { id: 'grateful', label: 'Grateful', code: 0x1F64F },
-  { id: 'cool',     label: 'Cool',     code: 0x1F60E },
-  { id: 'funny',    label: 'Funny',    code: 0x1F602 },
-  { id: 'love',     label: 'Love',     code: 0x1F60D },
-  { id: 'sick',     label: 'Sick',     code: 0x1F912 },
-  { id: 'worried',  label: 'Worried',  code: 0x1F61F },
+  { id: 'cool', label: 'Cool', code: 0x1F60E },
+  { id: 'funny', label: 'Funny', code: 0x1F602 },
+  { id: 'love', label: 'Love', code: 0x1F60D },
+  { id: 'sick', label: 'Sick', code: 0x1F912 },
+  { id: 'worried', label: 'Worried', code: 0x1F61F },
 ];
-
-const postPrompts = [
-  "What's the best thing that happened today?",
-  "Share a study tip that works!",
-  "What are you grateful for right now?",
-  "What’s one thing you’re looking forward to?",
-  "What’s your favourite spot on campus?",
-];
-
-function randomPrompt() { return postPrompts[Math.floor(Math.random() * postPrompts.length)]; }
 
 let postsPage = 0;
 const postsLimit = 10;
@@ -38,25 +30,19 @@ let postsObserver = null;
 let currentUserId = null;
 
 export function renderFeedSection(container, lastVisit, userId) {
+  // Safety check – prevent the "null.innerHTML" error
+  if (!container) {
+    console.error('renderFeedSection: container element not found');
+    return;
+  }
   currentUserId = userId;
   container.innerHTML = `
     <div class="feed-section">
-      <div class="feed-compose">
-        <div id="feelingPickerContainer"></div>
-        <textarea id="quickPostInput" placeholder="${randomPrompt()}" maxlength="500" class="feed-compose-textarea"></textarea>
-        <div class="feed-compose-actions">
-          <div style="display:flex; gap:8px;">
-            <button id="feelingBtn" class="btn btn-sm btn-secondary"><i data-lucide="smile"></i> Feeling</button>
-          </div>
-          <button id="quickPostBtn" class="btn btn-sm btn-primary" disabled>Post</button>
-        </div>
-      </div>
       <div id="latestPostsList"></div>
       <div id="postsSentinel" style="height:10px;"></div>
     </div>
   `;
   lucide.createIcons({ target: container });
-  setupCompose(userId, lastVisit);
   loadLatestPosts(userId, lastVisit, true);
   setupPostsInfiniteScroll(userId, lastVisit);
 }
@@ -86,11 +72,10 @@ async function loadLatestPosts(userId, lastVisit, reset = false) {
   });
   if (error || !posts || posts.length === 0) {
     hasMorePosts = false;
-    if (reset) list.innerHTML = '<p style="text-align:center;color:var(--text-muted);">No posts yet. Be the first!</p>';
+    if (reset) list.innerHTML = '<p class="empty-text">No posts yet. Be the first!</p>';
     isLoadingPosts = false;
     return;
   }
-  // Load verification status for all post authors
   const authorIds = [...new Set(posts.map(p => p.author_json?.id))];
   let verifiedMap = {};
   if (authorIds.length) {
@@ -117,13 +102,13 @@ function renderPostCard(post, userId, lastVisit, verifiedMap) {
   const verifiedBadge = getVerifiedBadge(verifiedMap[author.id] || false, author.id);
   const editedLabel = post.edited_at ? `<span class="edited-label" title="Edited ${timeAgo(post.edited_at)}">(edited)</span>` : '';
   return `
-    <div class="post-card" data-post-id="${post.id}">
+    <div class="post-card" data-post-id="${post.id}" data-author-id="${author.id}">
       <div class="post-header">
         <div class="post-avatar clickable" onclick="window.location.hash='#/profile/${author.id}'">${getAvatarHtml(author)}</div>
         <div>
           <span class="post-author-name clickable" onclick="window.location.hash='#/profile/${author.id}'">${escapeHtml(author.full_name)}</span>${verifiedBadge}
           <span class="post-time">${timeAgo(post.created_at)} ${editedLabel}</span>
-          ${isNew ? '<span class="badge new-badge">New</span>' : ''}
+          ${isNew ? '<span class="new-badge">New</span>' : ''}
         </div>
         <div class="post-menu-wrapper">
           <button class="post-menu-btn"><i data-lucide="more-horizontal"></i></button>
@@ -161,7 +146,6 @@ export async function loadComments(postId) {
   const list = document.getElementById(`comments-list-${postId}`);
   if (!list) return;
   list.innerHTML = '<div class="skeleton-comment"></div><div class="skeleton-comment"></div>';
-  // Load comments (top level)
   const { data: comments, error } = await supabase
     .from('comments')
     .select('id, user_id, content, created_at, edited_at')
@@ -171,7 +155,6 @@ export async function loadComments(postId) {
   const userIds = [...new Set(comments.map(c => c.user_id))];
   const { data: profiles } = await supabase.from('profiles').select('id, full_name, avatar_url, is_verified').in('id', userIds);
   const profileMap = Object.fromEntries(profiles.map(p => [p.id, p]));
-  // Also get replies count for each comment (to show "View replies")
   const commentIds = comments.map(c => c.id);
   let repliesCounts = {};
   if (commentIds.length) {
@@ -205,7 +188,6 @@ export async function loadComments(postId) {
       </div>
     `;
   }).join('');
-  // Attach reply and view replies handlers after rendering
   attachCommentEvents(postId);
   if (window.twemoji) window.twemoji.parse(list);
 }
@@ -243,7 +225,6 @@ async function loadReplies(commentId) {
 }
 
 function attachCommentEvents(postId) {
-  // Reply button
   document.querySelectorAll(`#comments-list-${postId} .btn-reply-to-comment`).forEach(btn => {
     btn.removeEventListener('click', replyHandler);
     btn.addEventListener('click', replyHandler);
@@ -275,9 +256,7 @@ function attachCommentEvents(postId) {
         else {
           showToast('Reply posted', 'success');
           inputField.value = '';
-          // Refresh replies display
           await loadReplies(commentId);
-          // Also update the "View replies" count (optional: increment counter)
           const viewBtn = document.querySelector(`.btn-view-replies[data-comment-id="${commentId}"]`);
           if (viewBtn) {
             const currentCount = parseInt(viewBtn.textContent.match(/\d+/) || 0);
@@ -289,7 +268,6 @@ function attachCommentEvents(postId) {
       });
     }
   });
-  // View replies button
   document.querySelectorAll(`#comments-list-${postId} .btn-view-replies`).forEach(btn => {
     btn.removeEventListener('click', viewRepliesHandler);
     btn.addEventListener('click', viewRepliesHandler);
@@ -311,7 +289,7 @@ function attachCommentEvents(postId) {
 }
 
 export function attachPostEvents(userId, lastVisit) {
-  // Like (unchanged)
+  // Like button
   document.querySelectorAll('.like-btn').forEach(btn => {
     btn.removeEventListener('click', likeHandler);
     btn.addEventListener('click', likeHandler);
@@ -328,8 +306,25 @@ export function attachPostEvents(userId, lastVisit) {
       btn.classList.toggle('liked');
       const cnt = btn.querySelector('span');
       cnt.textContent = parseInt(cnt.textContent) + (btn.classList.contains('liked') ? 1 : -1);
+      if (!isLiked) {
+        const postCard = btn.closest('.post-card');
+        const authorId = postCard?.dataset.authorId;
+        if (authorId && authorId !== userId) {
+          const { data: post } = await supabase.from('posts').select('content').eq('id', postId).single();
+          if (post) {
+            const currentUser = getCurrentUser();
+            await triggerPush(
+              authorId,
+              `${currentUser.full_name} liked your post`,
+              post.content?.substring(0, 80) || '',
+              { type: 'like', post_id: postId }
+            );
+          }
+        }
+      }
     }
   });
+
   // Comments toggle
   document.querySelectorAll('.comment-toggle-btn').forEach(btn => {
     btn.removeEventListener('click', commentToggleHandler);
@@ -346,6 +341,7 @@ export function attachPostEvents(userId, lastVisit) {
       }
     }
   });
+
   // Post comment
   document.querySelectorAll('.post-comment-btn').forEach(btn => {
     btn.removeEventListener('click', postCommentHandler);
@@ -355,12 +351,27 @@ export function attachPostEvents(userId, lastVisit) {
       const input = document.querySelector(`.comment-input[data-post-id="${postId}"]`);
       const content = input.value.trim();
       if (!content) return;
-      await supabase.from('comments').insert({ post_id: postId, user_id: userId, content });
-      input.value = '';
-      await loadComments(postId);
+      const { error } = await supabase.from('comments').insert({ post_id: postId, user_id: userId, content });
+      if (error) {
+        showToast('Could not post comment', 'error');
+      } else {
+        input.value = '';
+        await loadComments(postId);
+        const { data: post } = await supabase.from('posts').select('user_id, content').eq('id', postId).single();
+        if (post && post.user_id !== userId) {
+          const currentUser = getCurrentUser();
+          await triggerPush(
+            post.user_id,
+            `${currentUser.full_name} commented on your post`,
+            content.substring(0, 80),
+            { type: 'comment', post_id: postId }
+          );
+        }
+      }
     }
   });
-  // Bookmark (unchanged)
+
+  // Bookmark
   document.querySelectorAll('.bookmark-btn').forEach(btn => {
     btn.removeEventListener('click', bookmarkHandler);
     btn.addEventListener('click', bookmarkHandler);
@@ -387,7 +398,7 @@ export function attachPostEvents(userId, lastVisit) {
     }
   });
 
-  // Edit post (new)
+  // Edit post
   document.querySelectorAll('.edit-post-btn').forEach(btn => {
     btn.removeEventListener('click', editHandler);
     btn.addEventListener('click', editHandler);
@@ -412,7 +423,7 @@ export function attachPostEvents(userId, lastVisit) {
     }
   });
 
-  // Delete, copy, report (unchanged)
+  // Delete post
   document.querySelectorAll('.delete-post-btn').forEach(btn => {
     btn.removeEventListener('click', deleteHandler);
     btn.addEventListener('click', deleteHandler);
@@ -426,6 +437,8 @@ export function attachPostEvents(userId, lastVisit) {
       }
     }
   });
+
+  // Copy link
   document.querySelectorAll('.copy-link-btn').forEach(btn => {
     btn.removeEventListener('click', copyHandler);
     btn.addEventListener('click', copyHandler);
@@ -435,6 +448,8 @@ export function attachPostEvents(userId, lastVisit) {
       showToast('Link copied', 'success');
     }
   });
+
+  // Report post
   document.querySelectorAll('.report-post-btn').forEach(btn => {
     btn.removeEventListener('click', reportHandler);
     btn.addEventListener('click', reportHandler);
@@ -448,7 +463,7 @@ export function attachPostEvents(userId, lastVisit) {
     }
   });
 
-  // Dropdown toggle (unchanged)
+  // Dropdown toggle
   document.querySelectorAll('.post-menu-btn').forEach(btn => {
     btn.removeEventListener('click', menuHandler);
     btn.addEventListener('click', menuHandler);
@@ -463,56 +478,6 @@ export function attachPostEvents(userId, lastVisit) {
   });
 }
 
-// Compose logic (unchanged)
-function setupCompose(userId, lastVisit) {
-  const textarea = document.getElementById('quickPostInput');
-  const postBtn = document.getElementById('quickPostBtn');
-  const feelingBtn = document.getElementById('feelingBtn');
-  const feelingContainer = document.getElementById('feelingPickerContainer');
-  textarea.addEventListener('input', () => {
-    const hasFeeling = !!window._currentFeeling;
-    postBtn.disabled = (!textarea.value.trim() && !hasFeeling);
-  });
-  postBtn.addEventListener('click', async () => {
-    const content = textarea.value.trim();
-    const selectedFeeling = window._currentFeeling;
-    if (!content && !selectedFeeling) return;
-    const finalContent = content;
-    const { error } = await supabase.from('posts').insert({
-      user_id: userId,
-      content: finalContent,
-      feeling_type: selectedFeeling?.id || null
-    });
-    if (error) { showToast('Could not post', 'error'); } else {
-      textarea.value = '';
-      postBtn.disabled = true;
-      window._currentFeeling = null;
-      feelingBtn.innerHTML = '<i data-lucide="smile"></i> Feeling';
-      lucide.createIcons({ target: feelingBtn });
-      showToast('Post shared!', 'success');
-      loadLatestPosts(userId, lastVisit, true);
-    }
-  });
-  let pickerVisible = false;
-  feelingBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (pickerVisible) { feelingContainer.innerHTML = ''; pickerVisible = false; return; }
-    feelingContainer.innerHTML = `<div class="feeling-picker">${feelings.map(f => `<button class="feeling-chip" data-code="${f.code}" data-id="${f.id}" title="${f.label}"><img src="https://twemoji.maxcdn.com/v/14.0.2/72x72/${f.code.toString(16)}.png" class="twemoji-inline" alt="${f.label}" /> ${escapeHtml(f.label)}</button>`).join('')}</div>`;
-    if (window.twemoji) window.twemoji.parse(feelingContainer);
-    pickerVisible = true;
-    feelingContainer.querySelectorAll('.feeling-chip').forEach(chip => {
-      chip.addEventListener('click', (e2) => {
-        e2.stopPropagation();
-        window._currentFeeling = { code: parseInt(chip.dataset.code), id: chip.dataset.id, label: chip.title };
-        feelingBtn.innerHTML = `<i data-lucide="smile"></i> Feeling ${chip.title}`;
-        lucide.createIcons({ target: feelingBtn });
-        feelingContainer.innerHTML = '';
-        pickerVisible = false;
-        postBtn.disabled = false;
-      });
-    });
-  });
-  document.addEventListener('click', (e) => {
-    if (!feelingContainer.contains(e.target) && e.target !== feelingBtn) { feelingContainer.innerHTML = ''; pickerVisible = false; }
-  });
+export function openPostCompose() {
+  openCompose();
 }

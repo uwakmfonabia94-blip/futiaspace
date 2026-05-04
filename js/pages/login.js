@@ -24,6 +24,9 @@ export function renderLogin() {
           </button>
         </div>
         <button type="submit" class="btn btn-primary" id="loginBtn">Log In</button>
+        <div style="text-align: right; margin-top: 8px;">
+          <a href="#/forgot-password" style="font-size: 0.8rem; color: var(--violet-300);">Forgot password?</a>
+        </div>
       </form>
       <p class="auth-link">Don't have an account? <a href="#/signup">Sign up</a></p>
       <div id="loginError" style="color: var(--color-danger); text-align:center; margin-top:16px;"></div>
@@ -32,11 +35,9 @@ export function renderLogin() {
   `;
   lucide.createIcons();
 
-  // Password toggle
   const toggleBtn = document.getElementById('togglePassword');
   const pwField = document.getElementById('password');
   let showPw = false;
-
   toggleBtn.addEventListener('click', () => {
     showPw = !showPw;
     pwField.type = showPw ? 'text' : 'password';
@@ -44,7 +45,6 @@ export function renderLogin() {
     lucide.createIcons({ target: toggleBtn });
   });
 
-  // Form submission
   const form = document.getElementById('loginForm');
   const btn = document.getElementById('loginBtn');
   const errorEl = document.getElementById('loginError');
@@ -64,6 +64,5 @@ export function renderLogin() {
       btn.disabled = false;
       btn.textContent = 'Log In';
     }
-    // onAuthStateChange handles the rest
   });
 }

@@ -13,7 +13,7 @@ export function renderLanding() {
       <h1 class="landing-title">FutiaSpace</h1>
       <p class="landing-subtitle">The official campus network for FUTIA students.</p>
       <p class="landing-description">
-        Connect with classmates, share campus moments, and stay in the loop — all in one place.
+        Connect with coursemates, friends and colleagues share campus moments, and stay in the loop — all in one place.
       </p>
       <div class="landing-buttons">
         <button class="btn btn-primary btn-lg" id="getStartedBtn">Get Started</button>

@@ -28,5 +28,4 @@ export function openImageViewer(url) {
   });
 }
 
-// Expose globally (for inline onclick attributes)
 window.openImageViewer = openImageViewer;

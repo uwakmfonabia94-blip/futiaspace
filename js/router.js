@@ -40,7 +40,6 @@ export function resolve() {
     }
   }
 
-  // ultimate fallback
   navigate('/landing');
 }
 

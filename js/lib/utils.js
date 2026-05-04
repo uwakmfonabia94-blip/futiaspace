@@ -1,5 +1,8 @@
 // js/lib/utils.js
+import { supabase } from '../supabase.js';
+
 export function escapeHtml(text) {
+  if (!text) return '';
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
@@ -27,7 +30,6 @@ export function timeAgo(dateString) {
 export function getAvatarHtml(user) {
   if (!user) return '<div class="avatar-placeholder" style="background:#444;">?</div>';
   if (user.avatar_url) {
-    // Clicking the image opens full‑screen viewer, stops card navigation
     return `<img src="${escapeHtml(user.avatar_url)}" alt="${escapeHtml(user.full_name)}" class="avatar-img" onclick="event.stopPropagation(); window.openImageViewer('${escapeHtml(user.avatar_url)}')" />`;
   }
   const initials = (user.full_name || '?').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
@@ -42,4 +44,23 @@ export function stringToColor(str) {
   }
   const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
   return '#' + '00000'.substring(0, 6 - c.length) + c;
+}
+
+export async function canSendFriendRequest(currentUserId, targetUserId, supabase) {
+  const { data: existing } = await supabase
+    .from('friendships')
+    .select('id, status')
+    .or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${targetUserId}),and(sender_id.eq.${targetUserId},receiver_id.eq.${currentUserId})`)
+    .maybeSingle();
+  
+  if (existing) {
+    if (existing.status === 'pending') {
+      return { allowed: false, message: 'Friend request already sent' };
+    }
+    if (existing.status === 'accepted') {
+      return { allowed: false, message: 'You are already friends' };
+    }
+    return { allowed: false, message: 'Request already exists' };
+  }
+  return { allowed: true, message: '' };
 }

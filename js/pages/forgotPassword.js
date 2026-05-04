@@ -5,6 +5,8 @@ import { showToast } from '../ui/toast.js';
 
 export function renderForgotPassword() {
   const main = document.getElementById('mainContent');
+  if (!main) return;
+
   main.innerHTML = `
     <div class="auth-container">
       <div class="auth-logo">
@@ -25,6 +27,8 @@ export function renderForgotPassword() {
     </div>
   `;
 
+  lucide.createIcons();
+
   const form = document.getElementById('forgotPasswordForm');
   const btn = document.getElementById('resetBtn');
   const errorEl = document.getElementById('resetError');
@@ -34,11 +38,20 @@ export function renderForgotPassword() {
     errorEl.textContent = '';
     const email = document.getElementById('email').value.trim();
 
+    if (!email) {
+      errorEl.textContent = 'Please enter your email address.';
+      return;
+    }
+
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Sending...';
 
+    // IMPORTANT: Do NOT include a hash (#) in redirectTo.
+    // Supabase will append the token as a hash fragment automatically.
+    const redirectTo = `${window.location.origin}/update-password`;
+
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin + '/#/update-password',
+      redirectTo,
     });
 
     if (error) {
@@ -47,6 +60,8 @@ export function renderForgotPassword() {
       btn.textContent = 'Send reset link';
     } else {
       showToast('Reset link sent to your email!', 'success');
+      // Clear the form and redirect after a short delay
+      document.getElementById('email').value = '';
       setTimeout(() => navigate('/login'), 3000);
     }
   });

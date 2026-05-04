@@ -1,7 +1,7 @@
 // js/pages/directory.js
 import { supabase } from '../supabase.js';
 import { getCurrentUser } from '../ui/shell.js';
-import { escapeHtml, timeAgo, getAvatarHtml } from '../lib/utils.js';
+import { escapeHtml, timeAgo, getAvatarHtml, getVerifiedBadge } from '../lib/utils.js';
 import { renderFeedSection } from './feedSection.js';
 import { showToast } from '../ui/toast.js';
 
@@ -68,7 +68,7 @@ async function loadPeopleDiscovery(lastVisit) {
   const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   const { data: recentUsers } = await supabase
     .from('profiles')
-    .select('id, full_name, department, avatar_url, created_at')
+    .select('id, full_name, department, avatar_url, created_at, is_verified')
     .gte('created_at', twoWeeksAgo)
     .neq('id', currentUserId)
     .order('created_at', { ascending: false })
@@ -82,7 +82,7 @@ async function loadPeopleDiscovery(lastVisit) {
           <div class="list-item clickable" onclick="window.location.hash='#/profile/${u.id}'">
             ${getAvatarHtml(u)}
             <div>
-              <strong>${escapeHtml(u.full_name)}</strong>
+              <strong>${escapeHtml(u.full_name)} ${getVerifiedBadge(u.is_verified, u.id)}</strong>
               <span>${escapeHtml(u.department)}</span>
             </div>
           </div>
@@ -100,7 +100,7 @@ async function loadCampusActivity(lastVisit) {
   // Referrals
   const { data: referrals } = await supabase
     .from('profiles')
-    .select('id, full_name, avatar_url, referred_by, created_at')
+    .select('id, full_name, avatar_url, referred_by, created_at, is_verified')
     .not('referred_by', 'is', null)
     .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
     .order('created_at', { ascending: false })
@@ -112,7 +112,7 @@ async function loadCampusActivity(lastVisit) {
     referrals.forEach(p => {
       items.push({
         html: `<img src="${p.avatar_url || ''}" class="activity-avatar" onerror="this.style.display='none'" />
-               <span><strong>${escapeHtml(p.full_name)}</strong> joined via ${escapeHtml(referrerMap[p.referred_by] || 'someone')}'s invite</span>`,
+               <span><strong>${escapeHtml(p.full_name)} ${getVerifiedBadge(p.is_verified, p.id)}</strong> joined via ${escapeHtml(referrerMap[p.referred_by] || 'someone')}'s invite</span>`,
         link: `/profile/${p.id}`
       });
     });
@@ -120,7 +120,7 @@ async function loadCampusActivity(lastVisit) {
   // Friendships
   const { data: friendships } = await supabase
     .from('friendships')
-    .select('sender_id, receiver_id, updated_at, sender:profiles!sender_id(avatar_url, full_name), receiver:profiles!receiver_id(avatar_url, full_name)')
+    .select('sender_id, receiver_id, updated_at, sender:profiles!sender_id(avatar_url, full_name, is_verified), receiver:profiles!receiver_id(avatar_url, full_name, is_verified)')
     .eq('status', 'accepted')
     .order('updated_at', { ascending: false })
     .limit(3);
@@ -130,7 +130,7 @@ async function loadCampusActivity(lastVisit) {
       const receiverImg = f.receiver?.avatar_url ? `<img src="${escapeHtml(f.receiver.avatar_url)}" class="activity-avatar" />` : `<div class="activity-avatar-placeholder">${getInitials(f.receiver?.full_name)}</div>`;
       items.push({
         html: `<div class="activity-avatars">${senderImg}${receiverImg}</div>
-               <span>${escapeHtml(f.sender?.full_name || 'Someone')} & ${escapeHtml(f.receiver?.full_name || 'Someone')} are now friends</span>`,
+               <span>${escapeHtml(f.sender?.full_name || 'Someone')} ${getVerifiedBadge(f.sender?.is_verified, f.sender_id)} & ${escapeHtml(f.receiver?.full_name || 'Someone')} ${getVerifiedBadge(f.receiver?.is_verified, f.receiver_id)} are now friends</span>`,
         link: `/profile/${f.sender_id}`
       });
     });
@@ -179,7 +179,7 @@ async function loadPeopleYouMayKnow(lastVisit, reset = true) {
   if (!me) { container.innerHTML = ''; return; }
   const { data: candidates } = await supabase
     .from('profiles')
-    .select('id, full_name, department, avatar_url')
+    .select('id, full_name, department, avatar_url, is_verified')
     .eq('department', me.department)
     .eq('level', me.level)
     .neq('id', currentUserId)
@@ -208,7 +208,7 @@ async function loadPeopleYouMayKnow(lastVisit, reset = true) {
       <div class="list-item clickable" onclick="window.location.hash='#/profile/${u.id}'">
         ${getAvatarHtml(u)}
         <div>
-          <strong>${escapeHtml(u.full_name)}</strong>
+          <strong>${escapeHtml(u.full_name)} ${getVerifiedBadge(u.is_verified, u.id)}</strong>
           <span>${escapeHtml(u.department)}</span>
         </div>
         <button class="btn-friend add" data-user-id="${u.id}"><i data-lucide="user-plus"></i></button>
@@ -283,7 +283,7 @@ async function loadStudentGrid(reset = false, lastVisit) {
   if (reset) { profileOffset = 0; hasMoreProfiles = true; container.innerHTML = '<div class="skeleton-grid">Loading...</div>'; }
   const { data: profiles, error } = await supabase
     .from('profiles')
-    .select('id, full_name, department, level, gender, avatar_url, created_at')
+    .select('id, full_name, department, level, gender, avatar_url, created_at, is_verified')
     .neq('id', currentUserId)
     .order('created_at', { ascending: false })
     .range(profileOffset, profileOffset + profileLimit - 1);
@@ -293,7 +293,17 @@ async function loadStudentGrid(reset = false, lastVisit) {
     isLoadingProfiles = false;
     return;
   }
-  const enriched = await Promise.all(profiles.map(async p => {
+  // Pin current user to the top if present in this batch (only when reset = true)
+  let sortedProfiles = [...profiles];
+  if (reset) {
+    const selfIndex = sortedProfiles.findIndex(p => p.id === currentUserId);
+    if (selfIndex !== -1) {
+      const self = sortedProfiles[selfIndex];
+      sortedProfiles.splice(selfIndex, 1);
+      sortedProfiles.unshift(self);
+    }
+  }
+  const enriched = await Promise.all(sortedProfiles.map(async p => {
     const friendship = await getFriendshipStatus(currentUserId, p.id);
     return { ...p, friendship };
   }));
@@ -320,12 +330,13 @@ async function loadStudentGrid(reset = false, lastVisit) {
 function renderProfileCard(profile, lastVisit) {
   const isNew = lastVisit && new Date(profile.created_at) > new Date(lastVisit);
   const friendBtn = getFriendButtonHtml(profile.friendship, profile.id);
+  const verifiedBadge = getVerifiedBadge(profile.is_verified, profile.id);
   return `
     <div class="profile-card" data-user-id="${profile.id}" onclick="window.location.hash='#/profile/${profile.id}'">
       ${isNew ? '<span class="badge new-badge">New</span>' : ''}
       <div class="card-avatar">${getAvatarHtml(profile)}</div>
       <div class="card-info">
-        <h3>${escapeHtml(profile.full_name)}</h3>
+        <h3>${escapeHtml(profile.full_name)} ${verifiedBadge}</h3>
         <p class="dept-level">${escapeHtml(profile.department)} · ${profile.level}L</p>
         <p class="card-detail"><i data-lucide="user"></i> ${profile.gender}</p>
       </div>

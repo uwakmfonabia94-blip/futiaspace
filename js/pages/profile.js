@@ -1,19 +1,20 @@
 // js/pages/profile.js
 import { supabase } from '../supabase.js';
 import { getCurrentUser } from '../ui/shell.js';
-import { escapeHtml, timeAgo, getAvatarHtml } from '../lib/utils.js';
+import { escapeHtml, timeAgo, getAvatarHtml, getVerifiedBadge } from '../lib/utils.js';
 import { showToast } from '../ui/toast.js';
 import { showConfirm } from '../ui/modal.js';
+
+let currentViewerId = null;
 
 export async function renderProfile(userId) {
   const main = document.getElementById('mainContent');
   if (!main) return;
 
   const viewer = getCurrentUser();
-  const currentUserId = viewer.id;
-  const isOwnProfile = userId === currentUserId;
+  currentViewerId = viewer.id;
+  const isOwnProfile = userId === currentViewerId;
 
-  // Parallel fetches
   const [
     { data: profile },
     { data: friendshipsResult },
@@ -21,7 +22,7 @@ export async function renderProfile(userId) {
     { data: recentPosts }
   ] = await Promise.all([
     supabase.from('profiles')
-      .select('id, full_name, department, level, gender, bio, avatar_url, referral_code, created_at, last_active, poke_count')
+      .select('id, full_name, department, level, gender, bio, avatar_url, referral_code, created_at, last_active, poke_count, is_verified')
       .eq('id', userId)
       .single(),
     supabase.from('friendships')
@@ -29,9 +30,9 @@ export async function renderProfile(userId) {
       .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
       .eq('status', 'accepted')
       .limit(30),
-    supabase.rpc('get_mutual_friend_count', { user_a: currentUserId, user_b: userId }),
+    supabase.rpc('get_mutual_friend_count', { user_a: currentViewerId, user_b: userId }),
     supabase.from('posts')
-      .select('id, content, feeling_type, created_at, share_count')
+      .select('id, content, feeling_type, created_at, share_count, edited_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(5)
@@ -43,8 +44,6 @@ export async function renderProfile(userId) {
   }
 
   const mutualCount = mutualCountResult?.data || 0;
-
-  // Friend list
   const friendIds = [...new Set((friendshipsResult || []).map(r =>
     r.sender_id === userId ? r.receiver_id : r.sender_id
   ))].slice(0, 30);
@@ -52,31 +51,30 @@ export async function renderProfile(userId) {
   if (friendIds.length) {
     const { data: friendsData } = await supabase
       .from('profiles')
-      .select('id, full_name, avatar_url')
+      .select('id, full_name, avatar_url, is_verified')
       .in('id', friendIds);
     friendsProfiles = friendsData || [];
   }
 
-  // Friendship status between viewer and this user
   let friendship = null;
   if (!isOwnProfile) {
     const { data } = await supabase
       .from('friendships')
       .select('id, sender_id, receiver_id, status')
-      .or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${currentUserId})`)
+      .or(`and(sender_id.eq.${currentViewerId},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${currentViewerId})`)
       .maybeSingle();
     friendship = data;
   }
 
   const isFriend = friendship?.status === 'accepted';
-  const isPendingSent = friendship?.status === 'pending' && friendship.sender_id === currentUserId;
-  const isPendingReceived = friendship?.status === 'pending' && friendship.receiver_id === currentUserId;
+  const isPendingSent = friendship?.status === 'pending' && friendship.sender_id === currentViewerId;
+  const isPendingReceived = friendship?.status === 'pending' && friendship.receiver_id === currentViewerId;
 
   const activeStatusHTML = getActiveStatusHTML(profile.last_active);
   const joined = formatJoined(profile.created_at);
   const completionPercent = isOwnProfile ? calcCompletion(profile) : null;
+  const verifiedBadge = getVerifiedBadge(profile.is_verified, profile.id);
 
-  // Button HTML
   const buttonsHTML = isOwnProfile ? `
     <button class="btn btn-secondary" onclick="window.location.hash='#/settings'">Edit Profile</button>
   ` : `
@@ -100,7 +98,7 @@ export async function renderProfile(userId) {
           ${getAvatarHtml(profile)}
           ${activeStatusHTML ? `<span class="active-dot" title="${activeStatusHTML}"></span>` : ''}
         </div>
-        <h2 class="profile-name">${escapeHtml(profile.full_name)}</h2>
+        <h2 class="profile-name">${escapeHtml(profile.full_name)} ${verifiedBadge}</h2>
         <p class="profile-dept-level">${escapeHtml(profile.department)} · ${profile.level}L · ${profile.gender}</p>
         ${profile.bio ? `<p class="profile-bio">${escapeHtml(profile.bio)}</p>` : ''}
         <p class="profile-joined"><i data-lucide="calendar"></i> Joined ${joined}</p>
@@ -125,27 +123,26 @@ export async function renderProfile(userId) {
             friendsProfiles.map(f => `
               <div class="friend-card clickable" onclick="window.location.hash='#/profile/${f.id}'">
                 ${getAvatarHtml(f)}
-                <span class="friend-name">${escapeHtml(f.full_name.split(' ')[0])}</span>
+                <span class="friend-name">${escapeHtml(f.full_name.split(' ')[0])} ${getVerifiedBadge(f.is_verified, f.id)}</span>
               </div>`).join('')}
         </div>
       </div>
       <div class="profile-posts-section">
         <h3 class="section-title">Recent Posts</h3>
-        ${recentPosts?.length ? recentPosts.map(post => renderProfilePost(post, isOwnProfile, profile.full_name)).join('') : '<p class="empty-text">No posts yet.</p>'}
+        ${recentPosts?.length ? recentPosts.map(post => renderProfilePost(post, isOwnProfile, profile.full_name, profile.is_verified)).join('') : '<p class="empty-text">No posts yet.</p>'}
       </div>
     </div>
   `;
 
   lucide.createIcons({ target: main });
   if (window.twemoji) window.twemoji.parse(main);
-  attachProfilePostEvents(isOwnProfile);
+  attachProfilePostEvents(isOwnProfile, userId);
 
-  // Friend request actions (non‑own profile)
   if (!isOwnProfile) {
     const addBtn = document.querySelector('.btn-add-friend');
     if (addBtn) {
       addBtn.addEventListener('click', async () => {
-        await supabase.from('friendships').insert({ sender_id: currentUserId, receiver_id: userId, status: 'pending' });
+        await supabase.from('friendships').insert({ sender_id: currentViewerId, receiver_id: userId, status: 'pending' });
         showToast('Friend request sent', 'success');
         renderProfile(userId);
       });
@@ -169,22 +166,25 @@ export async function renderProfile(userId) {
   }
 }
 
-function renderProfilePost(post, isOwn, authorName) {
+function renderProfilePost(post, isOwn, authorName, isVerified) {
   const feeling = post.feeling_type
     ? feelings.find(f => f.id === post.feeling_type)
     : null;
   const feelingHtml = feeling
     ? `<div class="feeling-text"><img src="https://twemoji.maxcdn.com/v/14.0.2/72x72/${feeling.code.toString(16)}.png" class="twemoji-inline" alt="${feeling.label}" /> ${authorName} is feeling ${feeling.label}</div>`
     : '';
+  const editedLabel = post.edited_at ? `<span class="edited-label" title="Edited ${timeAgo(post.edited_at)}">(edited)</span>` : '';
+  const verifiedBadge = getVerifiedBadge(isVerified, '');
   return `
     <div class="profile-post-item" data-post-id="${post.id}">
       <div class="post-text">${feelingHtml}${escapeHtml(post.content)}</div>
       <div class="post-meta-actions">
-        <span class="post-meta">${timeAgo(post.created_at)}</span>
+        <span class="post-meta">${timeAgo(post.created_at)} ${editedLabel}</span>
         ${isOwn ? `
           <div class="post-menu-wrapper">
             <button class="post-menu-btn"><i data-lucide="more-horizontal"></i></button>
             <div class="post-dropdown" style="display:none;">
+              <button class="dropdown-item edit-post-btn" data-post-id="${post.id}" data-post-content="${escapeHtml(post.content)}" data-feeling="${post.feeling_type || ''}"><i data-lucide="edit-2"></i> Edit</button>
               <button class="dropdown-item delete-post-btn" data-post-id="${post.id}"><i data-lucide="trash-2"></i> Delete</button>
             </div>
           </div>` : `
@@ -200,7 +200,7 @@ function renderProfilePost(post, isOwn, authorName) {
   `;
 }
 
-function attachProfilePostEvents(isOwn) {
+function attachProfilePostEvents(isOwn, userId) {
   document.querySelectorAll('.post-menu-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -211,13 +211,34 @@ function attachProfilePostEvents(isOwn) {
   window.addEventListener('click', () => document.querySelectorAll('.post-dropdown').forEach(d => d.style.display = 'none'));
 
   if (isOwn) {
+    document.querySelectorAll('.edit-post-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const postId = btn.dataset.postId;
+        const oldContent = btn.dataset.postContent;
+        const oldFeeling = btn.dataset.feeling;
+        const newContent = prompt('Edit your post:', oldContent);
+        if (newContent === null || newContent.trim() === '') return;
+        const updateData = {
+          content: newContent.trim(),
+          edited_at: new Date().toISOString()
+        };
+        if (oldFeeling) updateData.feeling_type = oldFeeling;
+        const { error } = await supabase.from('posts').update(updateData).eq('id', postId);
+        if (error) showToast('Could not edit post', 'error');
+        else {
+          showToast('Post updated', 'success');
+          renderProfile(userId);
+        }
+      });
+    });
     document.querySelectorAll('.delete-post-btn').forEach(btn => btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const confirmed = await showConfirm('Delete Post', 'Are you sure?');
       if (confirmed) {
         await supabase.from('posts').delete().eq('id', btn.dataset.postId);
         showToast('Post deleted', 'success');
-        renderProfile(getCurrentUser().id);
+        renderProfile(userId);
       }
     }));
   } else {
@@ -230,7 +251,7 @@ function attachProfilePostEvents(isOwn) {
       e.stopPropagation();
       const confirmed = await showConfirm('Report Post', 'Report this post?');
       if (confirmed) {
-        await supabase.from('reports').insert({ post_id: btn.dataset.postId, reporter_id: getCurrentUser().id, reason: 'inappropriate' });
+        await supabase.from('reports').insert({ post_id: btn.dataset.postId, reporter_id: currentViewerId, reason: 'inappropriate' });
         showToast('Report submitted', 'success');
       }
     }));

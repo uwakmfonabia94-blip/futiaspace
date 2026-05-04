@@ -2747,3 +2747,99 @@ body.light-mode .profile-header::before {
 .post-content {
   font-size: 0.92rem; /* already set — just confirming it's the ceiling */
 }
+
+/* ══════════════════════════════════════════════════
+   FIX 1 — PROFILE AVATAR SIZE + ACTIVE DOT POSITION
+   ══════════════════════════════════════════════════ */
+
+.profile-avatar-large {
+  position: relative;
+  width: fit-content;
+  margin: -44px auto 18px;
+  z-index: 2;
+}
+
+/* Make the avatar noticeably larger */
+.avatar-img-large {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  border: 4px solid var(--bg-card);
+  box-shadow: 0 0 0 2.5px var(--violet-500), var(--shadow-glow-violet);
+  object-fit: cover;
+  display: block;
+}
+
+.avatar-placeholder-large {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  border: 4px solid var(--bg-card);
+  box-shadow: 0 0 0 2.5px var(--violet-500), var(--shadow-glow-violet);
+  font-size: 2.2rem;
+}
+
+/* Push the dot outside the avatar — no more overlap */
+.active-dot {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  width: 18px;
+  height: 18px;
+  background: var(--color-success);
+  border-radius: 50%;
+  border: 3px solid var(--bg-card);
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.70);
+  z-index: 3;
+  animation: activePulse 2.5s ease-in-out infinite;
+}
+
+
+/* ══════════════════════════════════════════════════
+   FIX 2 — EMOJI SIZE IN BIO + PROFILE POSTS
+   ══════════════════════════════════════════════════ */
+
+/* Bio text emoji */
+.profile-bio img,
+.profile-bio .twemoji-inline {
+  display: inline;
+  width: 1.15em;
+  height: 1.15em;
+  max-width: 1.15em;
+  vertical-align: -0.18em;
+  object-fit: contain;
+}
+
+/* Profile post list emoji */
+.post-text img,
+.post-text .twemoji-inline,
+.profile-post-item img,
+.profile-post-item .twemoji-inline {
+  display: inline;
+  width: 1.15em;
+  height: 1.15em;
+  max-width: 1.15em;
+  vertical-align: -0.18em;
+  object-fit: contain;
+}
+
+/* Catch-all safety net — any img Twemoji drops anywhere
+   inside the profile page that isn't an avatar */
+.profile-page img:not(.avatar-img):not(.avatar-img-large):not(.activity-product-img) {
+  max-width: 1.2em;
+  height: 1.2em;
+  width: 1.2em;
+  display: inline;
+  vertical-align: -0.18em;
+  object-fit: contain;
+}
+
+.verified-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.verified-badge svg {
+  display: block;
+}

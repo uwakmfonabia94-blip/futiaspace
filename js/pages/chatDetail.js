@@ -46,10 +46,16 @@ export async function renderChatDetail(otherUserId) {
   `;
   lucide.createIcons({ target: main });
 
+  // Load messages and then mark them as read
   await loadMessages(otherUserId, currentUserId);
   scrollToBottom();
   subscribeToMessages(otherUserId, currentUserId);
-  await markMessagesAsRead(otherUserId, currentUserId);
+  
+  // CRITICAL: Mark unread messages as read and update badge
+  const marked = await markMessagesAsRead(otherUserId, currentUserId);
+  if (marked) {
+    await updateChatBadge(currentUserId);
+  }
 
   const sendBtn = document.getElementById('chatSendBtn');
   const input = document.getElementById('chatInput');
@@ -94,14 +100,25 @@ async function loadMessages(otherUserId, currentUserId) {
 }
 
 async function markMessagesAsRead(otherUserId, currentUserId) {
-  await supabase
-    .from('messages')
-    .update({ read: true })
-    .eq('receiver_id', currentUserId)
-    .eq('sender_id', otherUserId)
-    .eq('status', 'accepted');
-  // Update the global chat badge after marking as read
-  await updateChatBadge(currentUserId);
+  try {
+    const { error } = await supabase
+      .from('messages')
+      .update({ read: true })
+      .eq('receiver_id', currentUserId)
+      .eq('sender_id', otherUserId)
+      .eq('status', 'accepted')
+      .eq('read', false);
+    
+    if (error) {
+      console.error('Failed to mark messages as read:', error);
+      return false;
+    }
+    console.log('Messages marked as read successfully');
+    return true;
+  } catch (err) {
+    console.error('Exception in markMessagesAsRead:', err);
+    return false;
+  }
 }
 
 async function sendMessage(receiverId, senderId) {
@@ -147,9 +164,10 @@ function subscribeToMessages(otherUserId, currentUserId) {
       schema: 'public',
       table: 'messages',
       filter: `sender_id=eq.${otherUserId} and receiver_id=eq.${currentUserId}`
-    }, () => {
-      loadMessages(otherUserId, currentUserId);
-      markMessagesAsRead(otherUserId, currentUserId);
+    }, async () => {
+      await loadMessages(otherUserId, currentUserId);
+      await markMessagesAsRead(otherUserId, currentUserId);
+      await updateChatBadge(currentUserId);
       scrollToBottom();
     })
     .subscribe();

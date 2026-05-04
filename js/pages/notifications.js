@@ -61,7 +61,7 @@ async function loadNotifications(userId) {
         msg = `<strong>${escapeHtml(fromUser.full_name)}</strong> sent you a friend request.`;
         tapTarget = `/profile/${fromUser.id}`;
         if (notif.friend_request_id && !notif.read) {
-          actionButtons = `<div class="notif-actions" data-friendship-id="${notif.friend_request_id}"><button class="btn-accept-friend" data-friendship-id="${notif.friend_request_id}">Accept</button><button class="btn-decline-friend" data-friendship-id="${notif.friend_request_id}">Decline</button></div>`;
+          actionButtons = `<div class="notif-actions" data-notif-id="${notif.id}" data-friendship-id="${notif.friend_request_id}"><button class="btn-accept-friend" data-friendship-id="${notif.friend_request_id}" data-notif-id="${notif.id}">Accept</button><button class="btn-decline-friend" data-friendship-id="${notif.friend_request_id}" data-notif-id="${notif.id}">Decline</button></div>`;
         }
         break;
       case 'friend_accepted':
@@ -72,7 +72,7 @@ async function loadNotifications(userId) {
         msg = `<strong>${escapeHtml(fromUser.full_name)}</strong> sent you a message.`;
         tapTarget = `/chat/${fromUser.id}`;
         if (notif.message_id) {
-          actionButtons = `<div class="notif-actions" data-message-id="${notif.message_id}"><button class="btn-accept-message" data-message-id="${notif.message_id}">Accept</button><button class="btn-decline-message" data-message-id="${notif.message_id}">Decline</button></div>`;
+          actionButtons = `<div class="notif-actions" data-notif-id="${notif.id}" data-message-id="${notif.message_id}"><button class="btn-accept-message" data-message-id="${notif.message_id}" data-notif-id="${notif.id}">Accept</button><button class="btn-decline-message" data-message-id="${notif.message_id}" data-notif-id="${notif.id}">Decline</button></div>`;
         }
         break;
       case 'like':
@@ -101,7 +101,7 @@ async function loadNotifications(userId) {
 }
 
 function attachNotificationEvents(userId) {
-  // Mark read on click (but not on button clicks)
+  // Mark read when clicked (but not on button clicks)
   document.querySelectorAll('.notification-item').forEach(item => {
     item.addEventListener('click', async (e) => {
       if (e.target.closest('.notif-actions') || e.target.closest('button')) return;
@@ -117,38 +117,57 @@ function attachNotificationEvents(userId) {
     });
   });
 
+  // Accept friend request - mark notification as read and reload list
   document.querySelectorAll('.btn-accept-friend').forEach(btn => {
-  btn.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const friendshipId = btn.dataset.friendshipId;
-    await supabase.from('friendships').update({ status: 'accepted' }).eq('id', friendshipId);
-    showToast('Friend added!', 'success');
-    // Reload notifications to remove the action buttons
-    await loadNotifications(userId);
-    updateBadge(userId);
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const friendshipId = btn.dataset.friendshipId;
+      const notifId = btn.dataset.notifId;
+      
+      // Update friendship status
+      const { error: friendError } = await supabase
+        .from('friendships')
+        .update({ status: 'accepted' })
+        .eq('id', friendshipId);
+      
+      if (friendError) {
+        showToast('Error: ' + friendError.message, 'error');
+        return;
+      }
+      
+      // Mark the notification as read (so it won't show buttons again)
+      await supabase.from('notifications').update({ read: true }).eq('id', notifId);
+      
+      showToast('Friend added!', 'success');
+      // Reload notifications to remove the buttons
+      await loadNotifications(userId);
+      updateBadge(userId);
+    });
   });
-});
 
+  // Decline friend request
   document.querySelectorAll('.btn-decline-friend').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const friendshipId = btn.dataset.friendshipId;
-      const { error } = await supabase.from('friendships').update({ status: 'declined' }).eq('id', friendshipId);
-      if (!error) {
-        showToast('Request declined', 'info');
-        const actionsDiv = btn.closest('.notif-actions');
-        if (actionsDiv) actionsDiv.remove();
-        await loadNotifications(userId);
-        updateBadge(userId);
-      }
+      const notifId = btn.dataset.notifId;
+      
+      await supabase.from('friendships').update({ status: 'declined' }).eq('id', friendshipId);
+      await supabase.from('notifications').update({ read: true }).eq('id', notifId);
+      
+      showToast('Request declined', 'info');
+      await loadNotifications(userId);
+      updateBadge(userId);
     });
   });
 
   // Accept message request
-  document.querySelectorAll('.btn-accept-message').forEach(async btn => {
+  document.querySelectorAll('.btn-accept-message').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const msgId = btn.dataset.messageId;
+      const notifId = btn.dataset.notifId;
+      
       const { data: msg } = await supabase.from('messages').select('sender_id, receiver_id').eq('id', msgId).single();
       if (msg) {
         await supabase.from('messages').update({ status: 'accepted' }).eq('id', msgId);
@@ -156,21 +175,22 @@ function attachNotificationEvents(userId) {
         if (!existing?.length) {
           await supabase.from('friendships').insert({ sender_id: msg.sender_id, receiver_id: msg.receiver_id, status: 'accepted' });
         }
+        await supabase.from('notifications').update({ read: true }).eq('id', notifId);
         showToast('Message request accepted. You are now friends.', 'success');
-        const actionsDiv = btn.closest('.notif-actions');
-        if (actionsDiv) actionsDiv.remove();
         await loadNotifications(userId);
         updateBadge(userId);
       }
     });
   });
+
   document.querySelectorAll('.btn-decline-message').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      await supabase.from('messages').update({ status: 'declined' }).eq('id', btn.dataset.messageId);
+      const msgId = btn.dataset.messageId;
+      const notifId = btn.dataset.notifId;
+      await supabase.from('messages').update({ status: 'declined' }).eq('id', msgId);
+      await supabase.from('notifications').update({ read: true }).eq('id', notifId);
       showToast('Message request declined.', 'info');
-      const actionsDiv = btn.closest('.notif-actions');
-      if (actionsDiv) actionsDiv.remove();
       await loadNotifications(userId);
       updateBadge(userId);
     });

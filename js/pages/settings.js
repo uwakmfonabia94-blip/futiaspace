@@ -23,12 +23,14 @@ export async function renderSettings() {
 
   main.innerHTML = `
     <div class="settings-page">
-      <h2 style="padding:16px;">Edit Profile</h2>
-      <form id="settingsForm" style="padding:0 16px;">
+      <h2>Edit Profile</h2>
+      <form id="settingsForm">
         <div class="form-group">
           <label>Profile Photo</label>
           <div class="avatar-upload" id="avatarContainer">
-            ${profile.avatar_url ? `<img src="${escapeHtml(profile.avatar_url)}" id="profileAvatarPreview" class="avatar-img-large" />` : `<div class="avatar-placeholder-large">${getInitials(profile.full_name)}</div>`}
+            ${profile.avatar_url 
+              ? `<img src="${escapeHtml(profile.avatar_url)}" id="profileAvatarPreview" class="avatar-img-large" />` 
+              : `<div class="avatar-placeholder-large" id="profileAvatarPlaceholder">${getInitials(profile.full_name)}</div>`}
             <button type="button" class="btn btn-secondary" id="changeAvatarBtn">Change Photo</button>
           </div>
         </div>
@@ -39,9 +41,9 @@ export async function renderSettings() {
         <div class="form-group">
           <label for="department">Department</label>
           <select id="department" class="form-select" disabled>
-            <!-- populated dynamically -->
+            <option value="">Loading...</option>
           </select>
-          <small style="color:var(--text-muted);">Department cannot be changed after signup.</small>
+          <small>Department cannot be changed after signup.</small>
         </div>
         <div class="form-group">
           <label for="level">Level</label>
@@ -57,7 +59,7 @@ export async function renderSettings() {
             <option value="Male" ${profile.gender === 'Male' ? 'selected' : ''}>Male</option>
             <option value="Female" ${profile.gender === 'Female' ? 'selected' : ''}>Female</option>
           </select>
-          <small style="color:var(--text-muted);">Gender cannot be changed after signup.</small>
+          <small>Gender cannot be changed after signup.</small>
         </div>
         <div class="form-group">
           <label for="bio">Bio</label>
@@ -67,8 +69,6 @@ export async function renderSettings() {
           <label for="whatsapp">WhatsApp Number (optional)</label>
           <input type="tel" id="whatsapp" placeholder="+234 801 234 5678" value="${escapeHtml(profile.whatsapp_number || '')}" />
         </div>
-
-        <!-- Referral code -->
         ${profile.referral_code ? `
           <div class="form-group">
             <label>Your Referral Link</label>
@@ -78,19 +78,20 @@ export async function renderSettings() {
             </div>
           </div>
         ` : ''}
-
         <button type="submit" class="btn btn-primary" id="saveBtn">Save Changes</button>
       </form>
 
-      <!-- Hidden file input and cropper modal -->
+      <!-- Hidden file input -->
       <input type="file" id="avatarFileInput" accept="image/*" style="display:none" />
+
+      <!-- Crop Modal -->
       <div id="cropModal" class="compose-overlay" style="display:none;">
-        <div class="crop-container" style="background:var(--color-surface); padding:16px; border-radius:12px; width:90%; max-width:400px;">
+        <div class="crop-container" style="background:var(--bg-surface); padding:20px; border-radius:20px; width:90%; max-width:400px;">
           <h3 style="margin-bottom:12px;">Crop your photo</h3>
-          <div style="max-height:300px;">
+          <div style="max-height:350px; overflow:hidden;">
             <img id="cropImage" style="max-width:100%;" />
           </div>
-          <div style="margin-top:8px; display:flex; gap:8px;">
+          <div style="margin-top:16px; display:flex; gap:12px;">
             <button type="button" class="btn btn-secondary" id="cancelCropBtn">Cancel</button>
             <button type="button" class="btn btn-primary" id="cropConfirmBtn">Confirm</button>
           </div>
@@ -101,99 +102,161 @@ export async function renderSettings() {
 
   lucide.createIcons({ target: main });
 
-  // Load departments dropdown (disabled just to show current)
-  loadDepartmentsDropdown(profile.department);
+  // Load departments (disabled, just for display)
+  await loadDepartmentsDropdown(profile.department);
 
   // Avatar change logic
   const fileInput = document.getElementById('avatarFileInput');
   const changeBtn = document.getElementById('changeAvatarBtn');
   const cropModal = document.getElementById('cropModal');
   const cropImage = document.getElementById('cropImage');
-  const cancelCropBtn = document.getElementById('cancelCropBtn');
-  const confirmCropBtn = document.getElementById('cropConfirmBtn');
+  const cancelCrop = document.getElementById('cancelCropBtn');
+  const confirmCrop = document.getElementById('cropConfirmBtn');
   let cropper = null;
+  let selectedFile = null;
 
-  changeBtn.addEventListener('click', () => fileInput.click());
+  changeBtn.addEventListener('click', () => {
+    fileInput.click();
+  });
 
   fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    selectedFile = file;
     const reader = new FileReader();
     reader.onload = (event) => {
       cropImage.src = event.target.result;
       cropModal.style.display = 'flex';
+      setTimeout(() => cropModal.classList.add('visible'), 10);
+      if (cropper) cropper.destroy();
       cropImage.onload = () => {
-        if (cropper) cropper.destroy();
-        cropper = new Cropper(cropImage, { aspectRatio: 1, viewMode: 2, autoCropArea: 1 });
+        cropper = new Cropper(cropImage, {
+          aspectRatio: 1,
+          viewMode: 2,
+          autoCropArea: 1,
+          responsive: true,
+          cropBoxMovable: true,
+          cropBoxResizable: true,
+          dragMode: 'move',
+        });
       };
     };
     reader.readAsDataURL(file);
   });
 
-  cancelCropBtn.addEventListener('click', () => {
-    cropModal.style.display = 'none';
-    if (cropper) cropper.destroy();
+  cancelCrop.addEventListener('click', () => {
+    cropModal.classList.remove('visible');
+    setTimeout(() => {
+      cropModal.style.display = 'none';
+      if (cropper) cropper.destroy();
+      cropper = null;
+    }, 200);
     fileInput.value = '';
   });
 
-  confirmCropBtn.addEventListener('click', async () => {
+  confirmCrop.addEventListener('click', async () => {
     if (!cropper) return;
     const canvas = cropper.getCroppedCanvas({ width: 256, height: 256 });
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
     const path = `${userId}/avatar.jpg`;
-    const { error: uploadError } = await supabase.storage.from('avatars').upload(path, blob, { upsert: true });
-    if (uploadError) { showToast('Upload failed: ' + uploadError.message, 'error'); return; }
 
+    // Show loading state
+    confirmCrop.disabled = true;
+    confirmCrop.innerHTML = '<span class="spinner"></span> Uploading...';
+
+    // Upload to storage
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(path, blob, { upsert: true });
+
+    if (uploadError) {
+      showToast('Upload failed: ' + uploadError.message, 'error');
+      confirmCrop.disabled = false;
+      confirmCrop.innerHTML = 'Confirm';
+      return;
+    }
+
+    // Get public URL
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
-    const { error: updateError } = await supabase.from('profiles').update({ avatar_url: publicUrl, avatar_path: path }).eq('id', userId);
-    if (updateError) { showToast('Failed to update profile: ' + updateError.message, 'error'); return; }
 
-    // Update preview
-    const preview = document.getElementById('profileAvatarPreview');
-    const placeholderDiv = document.querySelector('.avatar-placeholder-large');
-    if (preview) preview.src = publicUrl;
-    else if (placeholderDiv) placeholderDiv.outerHTML = `<img src="${publicUrl}" id="profileAvatarPreview" class="avatar-img-large" />`;
+    // Update profile
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ avatar_url: publicUrl, avatar_path: path })
+      .eq('id', userId);
 
-    cropModal.style.display = 'none';
-    cropper.destroy();
+    if (updateError) {
+      showToast('Failed to update profile: ' + updateError.message, 'error');
+    } else {
+      showToast('Photo updated!', 'success');
+      // Update preview in UI
+      const avatarContainer = document.getElementById('avatarContainer');
+      const existingImg = document.getElementById('profileAvatarPreview');
+      const existingPlaceholder = document.getElementById('profileAvatarPlaceholder');
+      if (existingImg) {
+        existingImg.src = publicUrl;
+      } else if (existingPlaceholder) {
+        existingPlaceholder.outerHTML = `<img src="${publicUrl}" id="profileAvatarPreview" class="avatar-img-large" />`;
+      } else {
+        avatarContainer.insertAdjacentHTML('afterbegin', `<img src="${publicUrl}" id="profileAvatarPreview" class="avatar-img-large" />`);
+      }
+    }
+
+    // Cleanup
+    cropModal.classList.remove('visible');
+    setTimeout(() => {
+      cropModal.style.display = 'none';
+      if (cropper) cropper.destroy();
+      cropper = null;
+    }, 200);
     fileInput.value = '';
-    showToast('Photo updated!', 'success');
+    confirmCrop.disabled = false;
+    confirmCrop.innerHTML = 'Confirm';
+  });
+
+  // Close modal on overlay click
+  cropModal.addEventListener('click', (e) => {
+    if (e.target === cropModal) {
+      cancelCrop.click();
+    }
   });
 
   // Copy referral link
   if (profile.referral_code) {
     document.getElementById('copyReferralBtn').addEventListener('click', () => {
-      navigator.clipboard.writeText(`https://futiaspace.com.ng/#/signup?ref=${profile.referral_code}`).then(() => showToast('Referral link copied!', 'success'));
+      navigator.clipboard.writeText(`https://futiaspace.com.ng/#/signup?ref=${profile.referral_code}`);
+      showToast('Referral link copied!', 'success');
     });
   }
 
-  // Form submit
-  document.getElementById('settingsForm').addEventListener('submit', async (e) => {
+  // Save other changes
+  const form = document.getElementById('settingsForm');
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fullName = document.getElementById('fullName').value.trim();
     const level = document.getElementById('level').value;
     const bio = document.getElementById('bio').value.trim();
     const whatsapp = document.getElementById('whatsapp').value.trim();
 
-    const { error } = await supabase.from('profiles').update({
-      full_name: fullName,
-      level,
-      bio: bio || null,
-      whatsapp_number: whatsapp || null
-    }).eq('id', userId);
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({
+        full_name: fullName,
+        level,
+        bio: bio || null,
+        whatsapp_number: whatsapp || null,
+      })
+      .eq('id', userId);
 
-    if (error) showToast('Update failed: ' + error.message, 'error');
-    else showToast('Profile updated!', 'success');
+    if (updateError) {
+      showToast('Update failed: ' + updateError.message, 'error');
+    } else {
+      showToast('Profile updated!', 'success');
+      // Update shell user name if needed
+      const currentUser = getCurrentUser();
+      if (currentUser) currentUser.user_metadata.full_name = fullName;
+    }
   });
-
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-  function getInitials(name) {
-    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-  }
 }
 
 async function loadDepartmentsDropdown(currentDepartment) {
@@ -201,6 +264,7 @@ async function loadDepartmentsDropdown(currentDepartment) {
   if (!select) return;
   const { data, error } = await supabase.from('departments').select('department').order('department');
   if (error) return;
+  select.innerHTML = '';
   data.forEach(d => {
     const option = document.createElement('option');
     option.value = d.department;
@@ -208,4 +272,15 @@ async function loadDepartmentsDropdown(currentDepartment) {
     if (d.department === currentDepartment) option.selected = true;
     select.appendChild(option);
   });
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function getInitials(name) {
+  return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 }

@@ -1,7 +1,7 @@
 // js/pages/feedSection.js
 import { supabase } from '../supabase.js';
 import { getCurrentUser } from '../ui/shell.js';
-import { escapeHtml, timeAgo, getAvatarHtml } from '../lib/utils.js';
+import { escapeHtml, timeAgo, getAvatarHtml, getVerifiedBadge } from '../lib/utils.js';
 import { showToast } from '../ui/toast.js';
 import { showConfirm } from '../ui/modal.js';
 
@@ -26,11 +26,6 @@ const postPrompts = [
   "What are you grateful for right now?",
   "What’s one thing you’re looking forward to?",
   "What’s your favourite spot on campus?",
-  "What’s the most interesting thing you’ve learned this week?",
-  "Share a motivational quote that keeps you going.",
-  "What’s a skill you’d love to learn?",
-  "What’s your favourite meal in the cafeteria?",
-  "Ask a question you’ve been curious about."
 ];
 
 function randomPrompt() { return postPrompts[Math.floor(Math.random() * postPrompts.length)]; }
@@ -80,66 +75,62 @@ function setupPostsInfiniteScroll(userId, lastVisit) {
 async function loadLatestPosts(userId, lastVisit, reset = false) {
   if (isLoadingPosts || (!hasMorePosts && !reset)) return;
   isLoadingPosts = true;
-
   const list = document.getElementById('latestPostsList');
   if (!list) { isLoadingPosts = false; return; }
-
-  if (reset) {
-    postsPage = 0;
-    hasMorePosts = true;
-    list.innerHTML = '<div class="skeleton-post"></div><div class="skeleton-post"></div>';
-  }
-
+  if (reset) { postsPage = 0; hasMorePosts = true; list.innerHTML = '<div class="skeleton-post"></div><div class="skeleton-post"></div>'; }
   const offset = postsPage * postsLimit;
   const { data: posts, error } = await supabase.rpc('get_all_posts', {
     current_user_id: userId,
     limit_count: postsLimit,
     offset_count: offset
   });
-
   if (error || !posts || posts.length === 0) {
     hasMorePosts = false;
     if (reset) list.innerHTML = '<p style="text-align:center;color:var(--text-muted);">No posts yet. Be the first!</p>';
     isLoadingPosts = false;
     return;
   }
-
-  const html = posts.map(post => renderPostCard(post, userId, lastVisit)).join('');
+  // Load verification status for all post authors
+  const authorIds = [...new Set(posts.map(p => p.author_json?.id))];
+  let verifiedMap = {};
+  if (authorIds.length) {
+    const { data: verifiedUsers } = await supabase.from('profiles').select('id, is_verified').in('id', authorIds);
+    verifiedMap = Object.fromEntries(verifiedUsers.map(v => [v.id, v.is_verified]));
+  }
+  const html = posts.map(post => renderPostCard(post, userId, lastVisit, verifiedMap)).join('');
   if (reset) list.innerHTML = html;
   else list.insertAdjacentHTML('beforeend', html);
-
   lucide.createIcons({ target: list });
   if (window.twemoji) window.twemoji.parse(list);
   attachPostEvents(userId, lastVisit);
-
   postsPage++;
   hasMorePosts = posts.length === postsLimit;
   isLoadingPosts = false;
 }
 
-export function renderPostCard(post, userId, lastVisit) {
+function renderPostCard(post, userId, lastVisit, verifiedMap) {
   const author = post.author_json;
   const isOwn = post.post_user_id === userId;
   const feeling = post.feeling_type ? feelings.find(f => f.id === post.feeling_type) : null;
   const isNew = lastVisit && new Date(post.created_at) > new Date(lastVisit);
   const feelingHtml = feeling ? `<div class="feeling-text"><img src="https://twemoji.maxcdn.com/v/14.0.2/72x72/${feeling.code.toString(16)}.png" class="twemoji-inline" alt="${feeling.label}" /> ${author.full_name} is feeling ${feeling.label}</div>` : '';
-
+  const verifiedBadge = getVerifiedBadge(verifiedMap[author.id] || false, author.id);
+  const editedLabel = post.edited_at ? `<span class="edited-label" title="Edited ${timeAgo(post.edited_at)}">(edited)</span>` : '';
   return `
     <div class="post-card" data-post-id="${post.id}">
       <div class="post-header">
-        <div class="post-avatar clickable" onclick="window.location.hash='#/profile/${author.id}'">
-          ${getAvatarHtml(author)}
-        </div>
+        <div class="post-avatar clickable" onclick="window.location.hash='#/profile/${author.id}'">${getAvatarHtml(author)}</div>
         <div>
-          <span class="post-author-name clickable" onclick="window.location.hash='#/profile/${author.id}'">${escapeHtml(author.full_name)}</span>
-          <span class="post-time">${timeAgo(post.created_at)}</span>
+          <span class="post-author-name clickable" onclick="window.location.hash='#/profile/${author.id}'">${escapeHtml(author.full_name)}</span>${verifiedBadge}
+          <span class="post-time">${timeAgo(post.created_at)} ${editedLabel}</span>
           ${isNew ? '<span class="badge new-badge">New</span>' : ''}
         </div>
         <div class="post-menu-wrapper">
           <button class="post-menu-btn"><i data-lucide="more-horizontal"></i></button>
           <div class="post-dropdown" style="display:none;">
             ${isOwn ?
-              `<button class="dropdown-item delete-post-btn" data-post-id="${post.id}"><i data-lucide="trash-2"></i> Delete</button>` :
+              `<button class="dropdown-item edit-post-btn" data-post-id="${post.id}" data-post-content="${escapeHtml(post.content)}" data-feeling="${post.feeling_type || ''}"><i data-lucide="edit-2"></i> Edit</button>
+               <button class="dropdown-item delete-post-btn" data-post-id="${post.id}"><i data-lucide="trash-2"></i> Delete</button>` :
               `<button class="dropdown-item copy-link-btn" data-post-id="${post.id}"><i data-lucide="link"></i> Copy Link</button>
                <button class="dropdown-item report-post-btn" data-post-id="${post.id}"><i data-lucide="flag"></i> Report</button>`
             }
@@ -148,18 +139,12 @@ export function renderPostCard(post, userId, lastVisit) {
       </div>
       <div class="post-content">
         ${feelingHtml}
-        ${escapeHtml(post.content)}
+        <div class="post-text-content">${escapeHtml(post.content)}</div>
       </div>
       <div class="post-actions">
-        <button class="action-btn like-btn ${post.is_liked ? 'liked' : ''}" data-post-id="${post.id}">
-          <i data-lucide="heart"></i> <span>${post.like_count || 0}</span>
-        </button>
-        <button class="action-btn comment-toggle-btn" data-post-id="${post.id}">
-          <i data-lucide="message-circle"></i> <span>${post.comment_count || 0}</span>
-        </button>
-        <button class="action-btn bookmark-btn" data-post-id="${post.id}">
-          <i data-lucide="bookmark"></i> <span>${post.share_count || 0}</span>
-        </button>
+        <button class="action-btn like-btn ${post.is_liked ? 'liked' : ''}" data-post-id="${post.id}"><i data-lucide="heart"></i> <span>${post.like_count || 0}</span></button>
+        <button class="action-btn comment-toggle-btn" data-post-id="${post.id}"><i data-lucide="message-circle"></i> <span>${post.comment_count || 0}</span></button>
+        <button class="action-btn bookmark-btn" data-post-id="${post.id}"><i data-lucide="bookmark"></i> <span>${post.share_count || 0}</span></button>
       </div>
       <div class="comments-section" id="comments-${post.id}" style="display:none;">
         <div style="display:flex; gap:6px; margin-bottom:8px;">
@@ -176,24 +161,157 @@ export async function loadComments(postId) {
   const list = document.getElementById(`comments-list-${postId}`);
   if (!list) return;
   list.innerHTML = '<div class="skeleton-comment"></div><div class="skeleton-comment"></div>';
+  // Load comments (top level)
   const { data: comments, error } = await supabase
     .from('comments')
-    .select('id, user_id, content, created_at')
+    .select('id, user_id, content, created_at, edited_at')
     .eq('post_id', postId)
     .order('created_at', { ascending: true });
   if (error || !comments) { list.innerHTML = ''; return; }
-  const ids = [...new Set(comments.map(c => c.user_id))];
-  const { data: profiles } = await supabase.from('profiles').select('id, full_name, avatar_url').in('id', ids);
-  const map = Object.fromEntries(profiles.map(p => [p.id, p]));
-  list.innerHTML = comments.map(c => {
-    const a = map[c.user_id] || { full_name: 'Unknown', avatar_url: null };
-    return `<div class="comment-item"><div class="comment-avatar clickable" onclick="window.location.hash='#/profile/${a.id}'">${getAvatarHtml(a)}</div><div><strong class="clickable" onclick="window.location.hash='#/profile/${a.id}'">${escapeHtml(a.full_name)}</strong><p>${escapeHtml(c.content)}</p><span class="comment-time">${timeAgo(c.created_at)}</span></div></div>`;
+  const userIds = [...new Set(comments.map(c => c.user_id))];
+  const { data: profiles } = await supabase.from('profiles').select('id, full_name, avatar_url, is_verified').in('id', userIds);
+  const profileMap = Object.fromEntries(profiles.map(p => [p.id, p]));
+  // Also get replies count for each comment (to show "View replies")
+  const commentIds = comments.map(c => c.id);
+  let repliesCounts = {};
+  if (commentIds.length) {
+    const { data: repliesData } = await supabase
+      .from('comment_replies')
+      .select('comment_id, count')
+      .in('comment_id', commentIds);
+    if (repliesData) {
+      repliesCounts = repliesData.reduce((acc, r) => { acc[r.comment_id] = parseInt(r.count); return acc; }, {});
+    }
+  }
+  list.innerHTML = comments.map(comment => {
+    const author = profileMap[comment.user_id] || { full_name: 'Unknown', avatar_url: null, is_verified: false };
+    const authorBadge = getVerifiedBadge(author.is_verified, author.id);
+    const editedLabel = comment.edited_at ? `<span class="edited-label" title="Edited ${timeAgo(comment.edited_at)}">(edited)</span>` : '';
+    const replyCount = repliesCounts[comment.id] || 0;
+    return `
+      <div class="comment-item-wrapper" data-comment-id="${comment.id}">
+        <div class="comment-item">
+          <div class="comment-avatar clickable" onclick="window.location.hash='#/profile/${author.id}'">${getAvatarHtml(author)}</div>
+          <div class="comment-content">
+            <strong class="clickable" onclick="window.location.hash='#/profile/${author.id}'">${escapeHtml(author.full_name)}</strong>${authorBadge}
+            <p>${escapeHtml(comment.content)} <span class="comment-time">${timeAgo(comment.created_at)} ${editedLabel}</span></p>
+            <div class="comment-actions">
+              <button class="btn-reply-to-comment" data-comment-id="${comment.id}" data-author-name="${escapeHtml(author.full_name)}">Reply</button>
+              ${replyCount > 0 ? `<button class="btn-view-replies" data-comment-id="${comment.id}">View replies (${replyCount})</button>` : ''}
+            </div>
+          </div>
+        </div>
+        <div class="replies-container" id="replies-${comment.id}" style="display:none; margin-left: 44px;"></div>
+      </div>
+    `;
   }).join('');
+  // Attach reply and view replies handlers after rendering
+  attachCommentEvents(postId);
   if (window.twemoji) window.twemoji.parse(list);
 }
 
+async function loadReplies(commentId) {
+  const container = document.getElementById(`replies-${commentId}`);
+  if (!container) return;
+  const { data: replies, error } = await supabase
+    .from('comment_replies')
+    .select('id, user_id, content, created_at, edited_at')
+    .eq('comment_id', commentId)
+    .order('created_at', { ascending: true });
+  if (error || !replies || replies.length === 0) {
+    container.innerHTML = '<p class="empty-replies">No replies yet.</p>';
+    return;
+  }
+  const userIds = [...new Set(replies.map(r => r.user_id))];
+  const { data: profiles } = await supabase.from('profiles').select('id, full_name, avatar_url, is_verified').in('id', userIds);
+  const profileMap = Object.fromEntries(profiles.map(p => [p.id, p]));
+  container.innerHTML = replies.map(reply => {
+    const author = profileMap[reply.user_id] || { full_name: 'Unknown', avatar_url: null, is_verified: false };
+    const authorBadge = getVerifiedBadge(author.is_verified, author.id);
+    const editedLabel = reply.edited_at ? `<span class="edited-label" title="Edited ${timeAgo(reply.edited_at)}">(edited)</span>` : '';
+    return `
+      <div class="reply-item">
+        <div class="comment-avatar clickable" onclick="window.location.hash='#/profile/${author.id}'">${getAvatarHtml(author)}</div>
+        <div class="comment-content">
+          <strong class="clickable" onclick="window.location.hash='#/profile/${author.id}'">${escapeHtml(author.full_name)}</strong>${authorBadge}
+          <p>${escapeHtml(reply.content)} <span class="comment-time">${timeAgo(reply.created_at)} ${editedLabel}</span></p>
+        </div>
+      </div>
+    `;
+  }).join('');
+  lucide.createIcons({ target: container });
+}
+
+function attachCommentEvents(postId) {
+  // Reply button
+  document.querySelectorAll(`#comments-list-${postId} .btn-reply-to-comment`).forEach(btn => {
+    btn.removeEventListener('click', replyHandler);
+    btn.addEventListener('click', replyHandler);
+    async function replyHandler(e) {
+      e.stopPropagation();
+      const commentId = btn.dataset.commentId;
+      const authorName = btn.dataset.authorName;
+      const existingInput = document.querySelector(`#replies-${commentId} .reply-input-area`);
+      if (existingInput) { existingInput.remove(); return; }
+      const replyHtml = `
+        <div class="reply-input-area" style="margin-top: 8px; display:flex; gap:6px;">
+          <input type="text" class="reply-input" placeholder="Reply to ${authorName}..." maxlength="300" />
+          <button class="btn btn-sm btn-primary submit-reply" data-comment-id="${commentId}">Reply</button>
+        </div>
+      `;
+      const container = document.getElementById(`replies-${commentId}`);
+      if (container) container.insertAdjacentHTML('beforebegin', replyHtml);
+      const submitBtn = document.querySelector(`.submit-reply[data-comment-id="${commentId}"]`);
+      const inputField = submitBtn?.previousElementSibling;
+      submitBtn?.addEventListener('click', async () => {
+        const content = inputField.value.trim();
+        if (!content) return;
+        const { error } = await supabase.from('comment_replies').insert({
+          comment_id: commentId,
+          user_id: currentUserId,
+          content
+        });
+        if (error) showToast('Could not post reply', 'error');
+        else {
+          showToast('Reply posted', 'success');
+          inputField.value = '';
+          // Refresh replies display
+          await loadReplies(commentId);
+          // Also update the "View replies" count (optional: increment counter)
+          const viewBtn = document.querySelector(`.btn-view-replies[data-comment-id="${commentId}"]`);
+          if (viewBtn) {
+            const currentCount = parseInt(viewBtn.textContent.match(/\d+/) || 0);
+            const newCount = currentCount + 1;
+            viewBtn.textContent = `View replies (${newCount})`;
+          }
+        }
+        inputField.parentElement?.remove();
+      });
+    }
+  });
+  // View replies button
+  document.querySelectorAll(`#comments-list-${postId} .btn-view-replies`).forEach(btn => {
+    btn.removeEventListener('click', viewRepliesHandler);
+    btn.addEventListener('click', viewRepliesHandler);
+    async function viewRepliesHandler(e) {
+      e.stopPropagation();
+      const commentId = btn.dataset.commentId;
+      const repliesDiv = document.getElementById(`replies-${commentId}`);
+      if (repliesDiv.style.display === 'none') {
+        await loadReplies(commentId);
+        repliesDiv.style.display = 'block';
+        btn.textContent = `Hide replies`;
+      } else {
+        repliesDiv.style.display = 'none';
+        const count = btn.textContent.match(/\d+/)?.[0] || 0;
+        btn.textContent = `View replies (${count})`;
+      }
+    }
+  });
+}
+
 export function attachPostEvents(userId, lastVisit) {
-  // Like
+  // Like (unchanged)
   document.querySelectorAll('.like-btn').forEach(btn => {
     btn.removeEventListener('click', likeHandler);
     btn.addEventListener('click', likeHandler);
@@ -212,7 +330,6 @@ export function attachPostEvents(userId, lastVisit) {
       cnt.textContent = parseInt(cnt.textContent) + (btn.classList.contains('liked') ? 1 : -1);
     }
   });
-
   // Comments toggle
   document.querySelectorAll('.comment-toggle-btn').forEach(btn => {
     btn.removeEventListener('click', commentToggleHandler);
@@ -229,7 +346,6 @@ export function attachPostEvents(userId, lastVisit) {
       }
     }
   });
-
   // Post comment
   document.querySelectorAll('.post-comment-btn').forEach(btn => {
     btn.removeEventListener('click', postCommentHandler);
@@ -244,8 +360,7 @@ export function attachPostEvents(userId, lastVisit) {
       await loadComments(postId);
     }
   });
-
-  // Bookmark with localStorage & icon change
+  // Bookmark (unchanged)
   document.querySelectorAll('.bookmark-btn').forEach(btn => {
     btn.removeEventListener('click', bookmarkHandler);
     btn.addEventListener('click', bookmarkHandler);
@@ -272,7 +387,32 @@ export function attachPostEvents(userId, lastVisit) {
     }
   });
 
-  // Delete / Copy / Report
+  // Edit post (new)
+  document.querySelectorAll('.edit-post-btn').forEach(btn => {
+    btn.removeEventListener('click', editHandler);
+    btn.addEventListener('click', editHandler);
+    async function editHandler(e) {
+      e.stopPropagation();
+      const postId = btn.dataset.postId;
+      const oldContent = btn.dataset.postContent;
+      const oldFeeling = btn.dataset.feeling;
+      const newContent = prompt('Edit your post:', oldContent);
+      if (newContent === null || newContent.trim() === '') return;
+      const updateData = {
+        content: newContent.trim(),
+        edited_at: new Date().toISOString()
+      };
+      if (oldFeeling) updateData.feeling_type = oldFeeling;
+      const { error } = await supabase.from('posts').update(updateData).eq('id', postId);
+      if (error) showToast('Could not edit post', 'error');
+      else {
+        showToast('Post updated', 'success');
+        loadLatestPosts(userId, lastVisit, true);
+      }
+    }
+  });
+
+  // Delete, copy, report (unchanged)
   document.querySelectorAll('.delete-post-btn').forEach(btn => {
     btn.removeEventListener('click', deleteHandler);
     btn.addEventListener('click', deleteHandler);
@@ -286,7 +426,6 @@ export function attachPostEvents(userId, lastVisit) {
       }
     }
   });
-
   document.querySelectorAll('.copy-link-btn').forEach(btn => {
     btn.removeEventListener('click', copyHandler);
     btn.addEventListener('click', copyHandler);
@@ -296,13 +435,12 @@ export function attachPostEvents(userId, lastVisit) {
       showToast('Link copied', 'success');
     }
   });
-
   document.querySelectorAll('.report-post-btn').forEach(btn => {
     btn.removeEventListener('click', reportHandler);
     btn.addEventListener('click', reportHandler);
     async function reportHandler(e) {
       e.stopPropagation();
-      const confirmed = await showConfirm('Report Post', 'Are you sure you want to report this post?');
+      const confirmed = await showConfirm('Report Post', 'Are you sure?');
       if (confirmed) {
         await supabase.from('reports').insert({ post_id: btn.dataset.postId, reporter_id: userId, reason: 'inappropriate' });
         showToast('Report submitted', 'success');
@@ -310,7 +448,7 @@ export function attachPostEvents(userId, lastVisit) {
     }
   });
 
-  // Dropdown toggle
+  // Dropdown toggle (unchanged)
   document.querySelectorAll('.post-menu-btn').forEach(btn => {
     btn.removeEventListener('click', menuHandler);
     btn.addEventListener('click', menuHandler);
@@ -325,18 +463,16 @@ export function attachPostEvents(userId, lastVisit) {
   });
 }
 
-// Compose logic
+// Compose logic (unchanged)
 function setupCompose(userId, lastVisit) {
   const textarea = document.getElementById('quickPostInput');
   const postBtn = document.getElementById('quickPostBtn');
   const feelingBtn = document.getElementById('feelingBtn');
   const feelingContainer = document.getElementById('feelingPickerContainer');
-
   textarea.addEventListener('input', () => {
     const hasFeeling = !!window._currentFeeling;
     postBtn.disabled = (!textarea.value.trim() && !hasFeeling);
   });
-
   postBtn.addEventListener('click', async () => {
     const content = textarea.value.trim();
     const selectedFeeling = window._currentFeeling;
@@ -357,7 +493,6 @@ function setupCompose(userId, lastVisit) {
       loadLatestPosts(userId, lastVisit, true);
     }
   });
-
   let pickerVisible = false;
   feelingBtn.addEventListener('click', (e) => {
     e.stopPropagation();

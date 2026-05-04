@@ -5,6 +5,39 @@ import { showToast } from '../ui/toast.js';
 
 export async function renderUpdatePassword() {
   const main = document.getElementById('mainContent');
+  if (!main) return;
+
+  // First, try to extract token from URL hash (for reset links)
+  let session = null;
+  const hashParams = new URLSearchParams(window.location.hash.substring(1));
+  const accessToken = hashParams.get('access_token');
+  const refreshToken = hashParams.get('refresh_token');
+
+  if (accessToken && refreshToken) {
+    // Manually set the session from the reset link
+    const { data, error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    if (!error && data.session) {
+      session = data.session;
+    } else {
+      console.error('Session set error:', error);
+    }
+  }
+
+  // If no session from hash, try normal session
+  if (!session) {
+    const { data: { session: existingSession }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !existingSession) {
+      showToast('Invalid or expired reset link. Please request a new one.', 'error');
+      navigate('/forgot-password');
+      return;
+    }
+    session = existingSession;
+  }
+
+  // Render the form
   main.innerHTML = `
     <div class="auth-container">
       <div class="auth-logo">
@@ -46,15 +79,6 @@ export async function renderUpdatePassword() {
   const form = document.getElementById('updatePasswordForm');
   const btn = document.getElementById('updateBtn');
   const errorEl = document.getElementById('updateError');
-
-  // The reset link gives us a session automatically; we just need to update the user's password.
-  // First, ensure we have a session. If not, redirect to login.
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) {
-    showToast('Invalid or expired reset link. Please request a new one.', 'error');
-    navigate('/forgot-password');
-    return;
-  }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();

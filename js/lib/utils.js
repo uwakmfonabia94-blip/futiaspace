@@ -46,13 +46,23 @@ export function stringToColor(str) {
   return '#' + '00000'.substring(0, 6 - c.length) + c;
 }
 
+export function getVerifiedBadge(isVerified, userId) {
+  if (!isVerified) return '';
+  // Facebook-style blue circle with white checkmark
+  return `<span class="verified-badge" title="Verified student">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="none">
+      <circle cx="12" cy="12" r="12" fill="#1D9BF0" />
+      <polyline points="7 12 10 15 17 8" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+    </svg>
+  </span>`;
+}
+
 export async function canSendFriendRequest(currentUserId, targetUserId, supabase) {
   const { data: existing } = await supabase
     .from('friendships')
     .select('id, status')
     .or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${targetUserId}),and(sender_id.eq.${targetUserId},receiver_id.eq.${currentUserId})`)
     .maybeSingle();
-  
   if (existing) {
     if (existing.status === 'pending') {
       return { allowed: false, message: 'Friend request already sent' };
